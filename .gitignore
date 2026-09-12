@@ -1,0 +1,20 @@
+# Secrets - NEVER upload to GitHub
+.env
+*.env
+backend/.env
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Temporary files
+.tmp/
+
+# Android build files
+android/.gradle/
+android/app/build/
+android/build/
+*.db
+storage_data/
+cloudbox.db
