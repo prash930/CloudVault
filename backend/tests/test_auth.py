@@ -255,3 +255,26 @@ def test_reset_password_rejects_blacklisted_token(client, test_db):
     response = client.post("/auth/reset-password", json={"token": token, "new_password": "newpassword123"})
 
     assert response.status_code == 400
+
+
+def test_password_reset_token_cannot_authenticate_user(client, test_db):
+    from backend.auth.service import create_password_reset_token, hash_password
+    from backend.users.models import User
+
+    user = User(
+        email="reset-auth@test.com",
+        display_name="Reset Auth",
+        hashed_password=hash_password("oldpassword"),
+        role="USER",
+        status="ACTIVE",
+    )
+    test_db.add(user)
+    test_db.commit()
+    test_db.refresh(user)
+
+    response = client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {create_password_reset_token(user.id)}"},
+    )
+
+    assert response.status_code == 401

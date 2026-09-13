@@ -18,7 +18,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,18 +32,9 @@ fun RegisterScreen(
     var confirmPassword by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var confirmPasswordVisible by remember { mutableStateOf(false) }
+    var validationMessage by remember { mutableStateOf<String?>(null) }
     
     val uiState by viewModel.uiState.collectAsState()
-    var showSuccessDialog by remember { mutableStateOf(false) }
-
-    LaunchedEffect(uiState.registerSuccess) {
-        if (uiState.registerSuccess) {
-            showSuccessDialog = true
-            delay(2000)
-            showSuccessDialog = false
-            onRegisterSuccess()
-        }
-    }
 
     val passwordStrength = calculatePasswordStrength(password)
     val strengthColor = when (passwordStrength) {
@@ -66,13 +56,13 @@ fun RegisterScreen(
             )
         }
     ) { paddingValues ->
-        if (showSuccessDialog) {
+        if (uiState.registerSuccess) {
             AlertDialog(
                 onDismissRequest = { },
                 title = { Text("Success") },
                 text = { Text("Registration successful! You can sign in now.") },
                 confirmButton = {
-                    TextButton(onClick = onRegisterSuccess) { Text("OK") }
+                    TextButton(onClick = onRegisterSuccess) { Text("Sign in") }
                 }
             )
         }
@@ -127,10 +117,15 @@ fun RegisterScreen(
             Spacer(modifier = Modifier.height(32.dp))
             Button(
                 onClick = {
-                    if (password == confirmPassword && password.isNotEmpty()) {
-                        viewModel.register(email, displayName, password)
-                    } else {
-                        // Normally handle error state here
+                    validationMessage = when {
+                        email.isBlank() -> "Enter your email address."
+                        displayName.trim().length < 2 -> "Display name must be at least 2 characters."
+                        password.length < 8 -> "Password must be at least 8 characters."
+                        password != confirmPassword -> "Passwords do not match."
+                        else -> null
+                    }
+                    if (validationMessage == null) {
+                        viewModel.register(email.trim(), displayName.trim(), password)
                     }
                 },
                 modifier = Modifier.fillMaxWidth().height(50.dp),
@@ -143,7 +138,9 @@ fun RegisterScreen(
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            if (uiState.error != null) {
+            if (validationMessage != null) {
+                Text(text = validationMessage ?: "", color = MaterialTheme.colorScheme.error)
+            } else if (uiState.error != null) {
                 Text(text = uiState.error ?: "", color = MaterialTheme.colorScheme.error)
             }
         }

@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordRequestForm
@@ -11,6 +13,7 @@ from backend.config import settings
 from backend.middleware.rate_limit import limiter
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+logger = logging.getLogger(__name__)
 
 @router.post("/register", response_model=schemas.MessageResponse)
 @limiter.limit("3/hour")
@@ -77,7 +80,7 @@ def forgot_password(request: Request, req: schemas.ForgotPasswordRequest, db: Se
             send_password_reset_email(user.email, reset_link)
         except Exception:
             # Do not expose delivery failures or account existence to the caller.
-            pass
+            logger.exception("Failed to deliver password reset email")
     return {"message": "If that email is in our system, we have sent a reset link."}
 
 

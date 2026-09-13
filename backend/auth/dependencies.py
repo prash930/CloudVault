@@ -22,12 +22,13 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
         user_id: str = payload.get("sub")
-        if user_id is None:
+        if user_id is None or payload.get("purpose") is not None:
             raise credentials_exception
-    except JWTError:
+        user_id_int = int(user_id)
+    except (JWTError, TypeError, ValueError):
         raise credentials_exception
         
-    user = get_user_by_id(db, int(user_id))
+    user = get_user_by_id(db, user_id_int)
     if user is None:
         raise credentials_exception
     return user
@@ -48,12 +49,13 @@ def get_current_admin_user(token: str = Depends(admin_oauth2_scheme), db: Sessio
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
         user_id: str = payload.get("sub")
-        if user_id is None:
+        if user_id is None or payload.get("purpose") is not None:
             raise credentials_exception
-    except JWTError:
+        user_id_int = int(user_id)
+    except (JWTError, TypeError, ValueError):
         raise credentials_exception
 
-    user = get_user_by_id(db, int(user_id))
+    user = get_user_by_id(db, user_id_int)
     if user is None:
         raise credentials_exception
     return user
