@@ -18,16 +18,28 @@ export default function Pending() {
   }, []);
 
   async function approve(userId: number) {
-    await apiRequest(`/admin/users/${userId}/approve`, { method: "POST" });
-    setMessage("User approved");
-    await load();
+    try {
+      await apiRequest(`/admin/users/${userId}/approve`, { method: "POST" });
+      setMessage("User approved");
+      setError("");
+      await load();
+    } catch (err) {
+      setError(String((err as Error).message || err));
+      setMessage("");
+    }
   }
 
   async function reject(userId: number) {
     if (!window.confirm("Reject and delete this registration request?")) return;
-    await apiRequest(`/admin/users/${userId}/reject`, { method: "POST" });
-    setMessage("User rejected");
-    await load();
+    try {
+      await apiRequest(`/admin/users/${userId}/reject`, { method: "POST" });
+      setMessage("User rejected");
+      setError("");
+      await load();
+    } catch (err) {
+      setError(String((err as Error).message || err));
+      setMessage("");
+    }
   }
 
   return (
