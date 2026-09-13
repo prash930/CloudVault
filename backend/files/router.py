@@ -26,10 +26,12 @@ def list_files_endpoint(
     search: Optional[str] = Query(None, min_length=1),
     sort: str = Query("name", pattern="^(name|date|size|type)$"),
     direction: str = Query("asc", pattern="^(asc|desc)$"),
+    category: Optional[str] = Query(None, pattern="^(images|videos|music|documents|emails|passwords)$"),
+    recursive: bool = Query(False),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    return service.list_files(db, current_user.id, parent_folder_id, search, sort, direction)
+    return service.list_files(db, current_user.id, parent_folder_id, search, sort, direction, category=category, recursive=recursive)
 
 
 @router.get("/search", response_model=schemas.FileListResponse)

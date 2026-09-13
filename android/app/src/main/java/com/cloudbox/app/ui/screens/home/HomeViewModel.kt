@@ -39,7 +39,8 @@ data class HomeUiState(
     val search: String = "",
     val sort: String = "name",
     val direction: String = "asc",
-    val transfers: List<TransferItem> = emptyList()
+    val transfers: List<TransferItem> = emptyList(),
+    val selectedCategory: String? = null
 )
 
 class HomeViewModel : ViewModel() {
@@ -82,7 +83,9 @@ class HomeViewModel : ViewModel() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             val state = _uiState.value
-            val result = fileRepository.listFiles(state.currentFolderId, state.search.ifBlank { null }, state.sort, state.direction)
+            val parent = if (state.selectedCategory != null) null else state.currentFolderId
+            val recursive = state.selectedCategory != null
+            val result = fileRepository.listFiles(parent, state.search.ifBlank { null }, state.sort, state.direction, state.selectedCategory, recursive)
             if (result.isSuccess) {
                 _uiState.update { it.copy(isLoading = false, files = result.getOrNull()?.items.orEmpty()) }
             } else {
@@ -107,6 +110,11 @@ class HomeViewModel : ViewModel() {
 
     fun setSort(value: String) {
         _uiState.update { it.copy(sort = value) }
+        loadFiles()
+    }
+
+    fun setCategory(category: String?) {
+        _uiState.update { it.copy(selectedCategory = category, currentFolderId = null, folderStack = emptyList(), search = "") }
         loadFiles()
     }
 

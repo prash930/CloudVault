@@ -27,6 +27,38 @@ ALLOWED_SORTS = {
     "size": FileRecord.size_bytes,
     "type": FileRecord.mime_type,
 }
+CATEGORY_MIME_PREFIXES = {
+    "images": ["image/"],
+    "videos": ["video/"],
+    "music": ["audio/"],
+    "documents": [
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument",
+        "application/vnd.oasis.opendocument",
+        "application/vnd.ms-excel",
+        "application/vnd.ms-powerpoint",
+        "application/vnd.apple.pages",
+        "application/vnd.apple.numbers",
+        "application/vnd.apple.keynote",
+        "application/rtf",
+        "text/plain",
+        "text/csv",
+        "text/markdown",
+    ],
+    "emails": [
+        "message/rfc822",
+        "application/vnd.ms-outlook",
+        "application/x-emlx",
+        "application/mbox",
+    ],
+    "passwords": [
+        "application/x-sqlite3",
+        "application/x-keepass",
+        "application/x-keepass2",
+        "application/octet-stream",
+    ],
+}
 
 
 def get_provider_for_record(db: Session, record: FileRecord) -> StorageProvider:
@@ -113,18 +145,29 @@ def list_files(
     sort: str,
     direction: str,
     trashed: bool = False,
+    category: Optional[str] = None,
+    recursive: bool = False,
 ):
-    if parent_folder_id is not None:
+    if category not in (None, *CATEGORY_MIME_PREFIXES.keys()):
+        raise HTTPException(status_code=400, detail="Invalid category")
+
+    if not recursive and parent_folder_id is not None:
         validate_parent_folder(db, user_id, parent_folder_id)
 
     query = db.query(FileRecord).filter(
         FileRecord.user_id == user_id,
         FileRecord.is_trashed.is_(trashed),
     )
-    if parent_folder_id is None:
-        query = query.filter(FileRecord.parent_folder_id.is_(None))
-    else:
-        query = query.filter(FileRecord.parent_folder_id == parent_folder_id)
+    if category:
+        query = query.filter(FileRecord.is_folder.is_(False))
+        prefixes = CATEGORY_MIME_PREFIXES[category]
+        clauses = [FileRecord.mime_type.like(f"{p}%") for p in prefixes]
+        query = query.filter(or_(*clauses))
+    if not recursive:
+        if parent_folder_id is None:
+            query = query.filter(FileRecord.parent_folder_id.is_(None))
+        else:
+            query = query.filter(FileRecord.parent_folder_id == parent_folder_id)
     if search:
         query = query.filter(FileRecord.filename.ilike(f"%{search}%"))
 

@@ -1,11 +1,9 @@
 import { FormEvent, useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import { apiRequest } from "../api/client";
 import type { AdminSettings, StorageStatus } from "../types";
 import { formatBytes, parseQuotaInput } from "../utils/format";
 
 export default function Settings() {
-  const [searchParams, setSearchParams] = useSearchParams();
   const [settings, setSettings] = useState<AdminSettings | null>(null);
   const [storageStatus, setStorageStatus] = useState<StorageStatus | null>(null);
   const [defaultQuotaGb, setDefaultQuotaGb] = useState("");
@@ -37,19 +35,6 @@ export default function Settings() {
       .catch((err) => setError(String(err.message || err)));
   }, []);
 
-  useEffect(() => {
-    const storageResult = searchParams.get("storage");
-    if (storageResult === "connected") {
-      setMessage("Google Drive connected successfully.");
-      setSearchParams({}, { replace: true });
-      apiRequest<StorageStatus>("/admin/storage/status").then(setStorageStatus).catch(() => undefined);
-    } else if (storageResult === "error") {
-      const detail = searchParams.get("message") || "Google Drive connection failed.";
-      setError(detail);
-      setSearchParams({}, { replace: true });
-    }
-  }, [searchParams, setSearchParams]);
-
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
@@ -78,37 +63,6 @@ export default function Settings() {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function handleConnectGoogleDrive() {
-    setStorageBusy(true);
-    setError("");
-    try {
-      const response = await apiRequest<{ authorization_url: string }>("/admin/storage/google/connect");
-      window.location.href = response.authorization_url;
-    } catch (err) {
-      setError(String(err instanceof Error ? err.message : err));
-      setStorageBusy(false);
-    }
-  }
-
-  async function handleDisconnectGoogleDrive() {
-    setStorageBusy(true);
-    setError("");
-    setMessage("");
-    try {
-      await apiRequest("/admin/storage/google/disconnect", { method: "POST" });
-      const status = await apiRequest<StorageStatus>("/admin/storage/status");
-      setStorageStatus(status);
-      if (storageProvider === "google_drive") {
-        setStorageProvider("local");
-      }
-      setMessage("Google Drive disconnected.");
-    } catch (err) {
-      setError(String(err instanceof Error ? err.message : err));
-    } finally {
-      setStorageBusy(false);
     }
   }
 
@@ -172,9 +126,7 @@ export default function Settings() {
       setMessage(
         nextProvider === "telegram_drive"
           ? "New uploads will use Telegram Drive. Existing files stay on their original backend."
-          : nextProvider === "google_drive"
-            ? "New uploads will use Google Drive. Existing local files remain on local storage."
-            : "New uploads will use local storage.",
+          : "New uploads will use local storage.",
       );
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
@@ -186,9 +138,6 @@ export default function Settings() {
   if (!settings && !error) {
     return <div className="page-loading">Loading settings…</div>;
   }
-
-  const drive = storageStatus?.google_drive;
-  const driveConnected = Boolean(drive?.connected);
 
   return (
     <div className="page">
@@ -212,8 +161,6 @@ export default function Settings() {
             <strong>
               {storageProvider === "telegram_drive"
                 ? "Telegram Drive"
-                : storageProvider === "google_drive"
-                ? "Google Drive"
                 : "Local disk"}
             </strong>
           </div>
@@ -241,7 +188,6 @@ export default function Settings() {
           ) : null}
         </div>
 
-        {/* Telegram Drive Connect / Disconnect */}
         <div style={{ marginTop: "1rem", padding: "1rem", background: "rgba(0,136,204,0.06)", borderRadius: "8px", border: "1px solid rgba(0,136,204,0.2)" }}>
           <h3 style={{ margin: "0 0 0.5rem 0", color: "#0088cc" }}>Telegram Drive Setup</h3>
           <p style={{ fontSize: "0.85rem", color: "#555", marginBottom: "0.75rem" }}>
@@ -287,41 +233,6 @@ export default function Settings() {
           )}
         </div>
 
-        {/* Secondary: Google Drive */}
-        <details style={{ marginTop: "1rem", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "0.75rem 1rem" }}>
-          <summary style={{ cursor: "pointer", fontWeight: 600, color: "#64748b" }}>
-            Alternative Storage: Google Drive ({driveConnected ? "Connected" : "Disconnected"})
-          </summary>
-          <div style={{ marginTop: "0.75rem" }}>
-            <p style={{ fontSize: "0.85rem", color: "#64748b" }}>
-              Optional Google Drive account link. CloudBox uses Telegram Drive as default.
-            </p>
-            {!driveConnected ? (
-              <button
-                className="btn btn-secondary"
-                type="button"
-                disabled={storageBusy || !drive?.configured}
-                onClick={handleConnectGoogleDrive}
-                style={{ marginTop: "0.5rem" }}
-              >
-                {storageBusy ? "Opening Google…" : "Connect Google Drive"}
-              </button>
-            ) : (
-              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "0.5rem" }}>
-                <span style={{ fontSize: "0.85rem" }}>{drive?.account_email}</span>
-                <button
-                  className="btn btn-secondary"
-                  type="button"
-                  disabled={storageBusy}
-                  onClick={handleDisconnectGoogleDrive}
-                >
-                  Disconnect Google Drive
-                </button>
-              </div>
-            )}
-          </div>
-        </details>
-
         <div style={{ marginTop: "1rem" }}>
           <label>
             Storage provider for new uploads
@@ -335,9 +246,6 @@ export default function Settings() {
                 Telegram Drive (Recommended / Unlimited)
               </option>
               <option value="local">Local disk</option>
-              <option value="google_drive" disabled={!driveConnected}>
-                Google Drive{driveConnected ? "" : " (connect first)"}
-              </option>
             </select>
             <small>
               Existing files keep their original backend. New uploads will route to the selected provider.

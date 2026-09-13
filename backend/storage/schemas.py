@@ -4,18 +4,6 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
-class GoogleDriveStatus(BaseModel):
-    configured: bool
-    connected: bool
-    account_email: Optional[str] = None
-    account_id: Optional[str] = None
-    connected_at: Optional[datetime] = None
-    status: Literal["connected", "disconnected"]
-    total_space: Optional[int] = None
-    used_space: Optional[int] = None
-    available_space: Optional[int] = None
-
-
 class TelegramDriveStatus(BaseModel):
     configured: bool
     connected: bool
@@ -29,12 +17,7 @@ class TelegramDriveStatus(BaseModel):
 
 class StorageStatusResponse(BaseModel):
     storage_provider: str
-    google_drive: GoogleDriveStatus
     telegram_drive: TelegramDriveStatus
-
-
-class GoogleConnectResponse(BaseModel):
-    authorization_url: str
 
 
 class TelegramConnectRequest(BaseModel):
@@ -43,7 +26,7 @@ class TelegramConnectRequest(BaseModel):
 
 
 class StorageProviderUpdateRequest(BaseModel):
-    storage_provider: Literal["local", "google_drive", "telegram_drive"] = Field(...)
+    storage_provider: Literal["local", "telegram_drive"] = Field(...)
 
 
 class MessageResponse(BaseModel):

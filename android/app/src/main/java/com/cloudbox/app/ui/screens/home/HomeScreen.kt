@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,24 +20,34 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AlternateEmail
+import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -80,6 +91,43 @@ private enum class HomeTab(val label: String, val icon: ImageVector) {
     Transfers("Transfers", Icons.Default.Upload),
     Trash("Trash", Icons.Default.Delete),
     Profile("Profile", Icons.Default.Person)
+}
+
+private enum class FileCategory(val key: String, val label: String, val icon: ImageVector) {
+    Images("images", "Images", Icons.Default.PhotoLibrary),
+    Videos("videos", "Videos", Icons.Default.VideoLibrary),
+    Music("music", "Music", Icons.Default.MusicNote),
+    Documents("documents", "Documents", Icons.Default.Description),
+    Emails("emails", "Emails", Icons.Default.AlternateEmail),
+    Passwords("passwords", "Passwords", Icons.Default.Key)
+}
+
+private fun categoryFromKey(key: String?): FileCategory? =
+    FileCategory.entries.firstOrNull { it.key == key }
+
+private fun iconForMime(mime: String?): ImageVector {
+    val m = mime ?: return Icons.Default.InsertDriveFile
+    return when {
+        m.startsWith("image/") -> Icons.Default.Image
+        m.startsWith("video/") -> Icons.Default.VideoLibrary
+        m.startsWith("audio/") -> Icons.Default.AudioFile
+        m.startsWith("message/rfc822") ||
+            m.startsWith("application/vnd.ms-outlook") ||
+            m.startsWith("application/x-emlx") ||
+            m.startsWith("application/mbox") -> Icons.Default.AlternateEmail
+        m.startsWith("application/x-sqlite3") ||
+            m.startsWith("application/x-keepass") ||
+            m.startsWith("application/x-keepass2") -> Icons.Default.Key
+        m.startsWith("application/pdf") ||
+            m.startsWith("application/msword") ||
+            m.startsWith("application/vnd.openxmlformats") ||
+            m.startsWith("application/vnd.oasis.opendocument") ||
+            m.startsWith("application/vnd.ms-excel") ||
+            m.startsWith("application/vnd.ms-powerpoint") ||
+            m.startsWith("application/rtf") ||
+            m.startsWith("text/") -> Icons.Default.Description
+        else -> Icons.Default.InsertDriveFile
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -149,11 +197,20 @@ fun HomeScreen(
                 .padding(16.dp)
         ) {
             when (tab) {
-                HomeTab.Home -> HomeDashboard(uiState, onFiles = { tab = HomeTab.Files }, onUpload = { picker.launch("*/*") })
+                HomeTab.Home -> HomeDashboard(
+                    uiState,
+                    onFiles = { tab = HomeTab.Files },
+                    onUpload = { picker.launch("*/*") },
+                    onCategory = { category ->
+                        viewModel.setCategory(category)
+                        tab = HomeTab.Files
+                    }
+                )
                 HomeTab.Files -> FilesView(
                     uiState = uiState,
                     onSearch = viewModel::setSearch,
                     onSort = viewModel::setSort,
+                    onClearCategory = { viewModel.setCategory(null) },
                     onNewFolder = { folderDialog = true },
                     onOpenFolder = viewModel::openFolder,
                     onUp = viewModel::goUp,
@@ -213,7 +270,12 @@ fun HomeScreen(
 }
 
 @Composable
-private fun HomeDashboard(uiState: HomeUiState, onFiles: () -> Unit, onUpload: () -> Unit) {
+private fun HomeDashboard(
+    uiState: HomeUiState,
+    onFiles: () -> Unit,
+    onUpload: () -> Unit,
+    onCategory: (String) -> Unit
+) {
     Text("Welcome, ${uiState.userName}", style = MaterialTheme.typography.titleLarge)
     Spacer(Modifier.height(16.dp))
     StorageIndicator(uiState.usagePercentage, uiState.usedFormatted, uiState.quotaFormatted)
@@ -228,6 +290,37 @@ private fun HomeDashboard(uiState: HomeUiState, onFiles: () -> Unit, onUpload: (
             Text("My Files")
         }
     }
+    Spacer(Modifier.height(24.dp))
+    Text("Categories", style = MaterialTheme.typography.titleMedium)
+    Spacer(Modifier.height(12.dp))
+    Column(
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        val cats = FileCategory.entries
+        listOf(0, 2, 4).forEach { rowStart ->
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                cats.slice(rowStart until rowStart + 2).forEach { cat ->
+                    ElevatedCard(
+                        onClick = { onCategory(cat.key) },
+                        modifier = Modifier.weight(1f).aspectRatio(1f)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(cat.icon, contentDescription = null, modifier = Modifier.size(40.dp))
+                            Spacer(Modifier.height(8.dp))
+                            Text(cat.label, style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -235,6 +328,7 @@ private fun FilesView(
     uiState: HomeUiState,
     onSearch: (String) -> Unit,
     onSort: (String) -> Unit,
+    onClearCategory: () -> Unit,
     onNewFolder: () -> Unit,
     onOpenFolder: (CloudFile) -> Unit,
     onUp: () -> Unit,
@@ -244,6 +338,20 @@ private fun FilesView(
     onTrash: (CloudFile) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
+    categoryFromKey(uiState.selectedCategory)?.let { cat ->
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+        ) {
+            AssistChip(
+                onClick = {},
+                label = { Text("Showing: ${cat.label}") },
+                leadingIcon = { Icon(cat.icon, contentDescription = null) }
+            )
+            TextButton(onClick = onClearCategory) { Text("Clear") }
+        }
+    }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(
             value = uiState.search,
@@ -254,18 +362,20 @@ private fun FilesView(
             modifier = Modifier.weight(1f)
         )
         SortMenu(uiState.sort, onSort)
-        IconButton(onClick = onNewFolder) {
-            Icon(Icons.Default.Add, contentDescription = "New folder")
+        if (uiState.selectedCategory == null) {
+            IconButton(onClick = onNewFolder) {
+                Icon(Icons.Default.Add, contentDescription = "New folder")
+            }
         }
     }
-    if (uiState.folderStack.isNotEmpty()) {
+    if (uiState.selectedCategory == null && uiState.folderStack.isNotEmpty()) {
         TextButton(onClick = onUp) { Text("Up from ${uiState.folderStack.last().filename}") }
     }
     if (uiState.isLoading) {
         CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
     }
     uiState.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-    FileList(uiState.files, "This folder is empty", onOpenFolder, onOpenFile, onDownload, onRename, onTrash)
+    FileList(uiState.files, if (uiState.selectedCategory != null) "No ${categoryFromKey(uiState.selectedCategory)?.label?.lowercase()} found" else "This folder is empty", onOpenFolder, onOpenFile, onDownload, onRename, onTrash)
     }
 }
 
@@ -332,7 +442,7 @@ private fun FileRow(
             modifier = Modifier.padding(12.dp)
         ) {
             Icon(
-                if (file.is_folder) Icons.Default.Folder else Icons.Default.InsertDriveFile,
+                if (file.is_folder) Icons.Default.Folder else iconForMime(file.mime_type),
                 contentDescription = null,
                 modifier = Modifier.size(32.dp)
             )

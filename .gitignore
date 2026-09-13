@@ -16,3 +16,6 @@ android/.gradle/
 android/app/build/
 android/build/
 *.db
+storage_data/
+cloudbox.db
+cloudbox.db

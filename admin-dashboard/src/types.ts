@@ -77,18 +77,6 @@ export interface AdminSettings {
   storage_provider: string;
 }
 
-export interface GoogleDriveStatus {
-  configured: boolean;
-  connected: boolean;
-  account_email?: string | null;
-  account_id?: string | null;
-  connected_at?: string | null;
-  status: "connected" | "disconnected";
-  total_space?: number | null;
-  used_space?: number | null;
-  available_space?: number | null;
-}
-
 export interface TelegramDriveStatus {
   configured: boolean;
   connected: boolean;
@@ -102,6 +90,5 @@ export interface TelegramDriveStatus {
 
 export interface StorageStatus {
   storage_provider: string;
-  google_drive: GoogleDriveStatus;
   telegram_drive: TelegramDriveStatus;
 }

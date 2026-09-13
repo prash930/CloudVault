@@ -36,9 +36,9 @@ class FileRepository {
         return Result.failure(Exception(errorMsg))
     }
 
-    suspend fun listFiles(parentFolderId: Int?, search: String?, sort: String, direction: String): Result<FileListResponse> {
+    suspend fun listFiles(parentFolderId: Int?, search: String?, sort: String, direction: String, category: String? = null, recursive: Boolean = false): Result<FileListResponse> {
         return try {
-            handleResponse(api.listFiles(parentFolderId, search, sort, direction))
+            handleResponse(api.listFiles(parentFolderId, search, sort, direction, category, recursive))
         } catch (e: Exception) {
             Result.failure(e)
         }

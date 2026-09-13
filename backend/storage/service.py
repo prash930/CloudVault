@@ -231,28 +231,15 @@ def get_telegram_usage_bytes(db: Session) -> int:
 def get_public_status(db: Session) -> dict[str, Any]:
     runtime = settings_service.get_runtime_settings(db)
     provider = runtime.get("storage_provider", settings.STORAGE_PROVIDER)
-    connection = get_connection(db)
-    connected = bool(connection and connection.encrypted_refresh_token)
     telegram_row = get_telegram_connection(db)
     telegram_connected = is_telegram_connected(db)
     telegram_username = telegram_row.bot_username if telegram_row and telegram_row.bot_username else None
     telegram_chat = telegram_row.chat_id if telegram_row and telegram_row.chat_id else (
         settings.TELEGRAM_STORAGE_CHAT_ID or None
     )
-    
+
     status = {
-        "storage_provider": provider,
-        "google_drive": {
-            "configured": is_google_configured(),
-            "connected": connected,
-            "account_email": connection.account_email if connected else None,
-            "account_id": connection.account_id if connected else None,
-            "connected_at": connection.connected_at.isoformat() if connected and connection.connected_at else None,
-            "status": "connected" if connected else "disconnected",
-            "total_space": None,
-            "used_space": None,
-            "available_space": None,
-        },
+        "storage_provider": provider if provider != "google_drive" else "local",
         "telegram_drive": {
             "configured": is_telegram_configured() or telegram_connected,
             "connected": telegram_connected,
@@ -268,18 +255,12 @@ def get_public_status(db: Session) -> dict[str, Any]:
             "note": "Files are stored as chunked Telegram documents in your storage chat.",
         },
     }
-    
-    if connected:
-        from backend.storage.google_drive import get_drive_quota
-        quota = get_drive_quota(db)
-        if quota:
-            status["google_drive"].update(quota)
-            
+
     return status
 
 
 def validate_provider_switch(db: Session, provider: str) -> None:
-    if provider == "google_drive" and not is_connected(db):
-        raise ValueError("Connect Google Drive before selecting it as the storage provider")
+    if provider == "google_drive":
+        raise ValueError("Google Drive is disabled")
     if provider == "telegram_drive" and not is_telegram_connected(db):
         raise ValueError("Connect Telegram Drive before selecting it as the storage provider")

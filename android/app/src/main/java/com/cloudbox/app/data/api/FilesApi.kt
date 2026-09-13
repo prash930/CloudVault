@@ -25,7 +25,9 @@ interface FilesApi {
         @Query("parent_folder_id") parentFolderId: Int? = null,
         @Query("search") search: String? = null,
         @Query("sort") sort: String = "name",
-        @Query("direction") direction: String = "asc"
+        @Query("direction") direction: String = "asc",
+        @Query("category") category: String? = null,
+        @Query("recursive") recursive: Boolean = false
     ): Response<FileListResponse>
 
     @GET("/files/search")
