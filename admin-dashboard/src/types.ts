@@ -71,7 +71,6 @@ export interface AuditLog {
 
 export interface AdminSettings {
   default_quota_bytes: number;
-  require_registration_approval: boolean;
   max_upload_bytes: number;
   trash_retention_days: number;
   storage_provider: string;

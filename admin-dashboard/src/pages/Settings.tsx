@@ -8,7 +8,6 @@ export default function Settings() {
   const [storageStatus, setStorageStatus] = useState<StorageStatus | null>(null);
   const [defaultQuotaGb, setDefaultQuotaGb] = useState("");
   const [maxUploadGb, setMaxUploadGb] = useState("");
-  const [requireApproval, setRequireApproval] = useState(true);
   const [trashDays, setTrashDays] = useState("30");
   const [storageProvider, setStorageProvider] = useState("local");
   const [telegramBotToken, setTelegramBotToken] = useState("");
@@ -28,7 +27,6 @@ export default function Settings() {
         setStorageStatus(storageData);
         setDefaultQuotaGb(String(Math.round(settingsData.default_quota_bytes / 1024 ** 3)));
         setMaxUploadGb(String(Math.round(settingsData.max_upload_bytes / 1024 ** 3)));
-        setRequireApproval(settingsData.require_registration_approval);
         setTrashDays(String(settingsData.trash_retention_days));
         setStorageProvider(storageData.storage_provider);
       })
@@ -53,7 +51,6 @@ export default function Settings() {
         body: JSON.stringify({
           default_quota_bytes: defaultQuota,
           max_upload_bytes: maxUpload,
-          require_registration_approval: requireApproval,
           trash_retention_days: Math.floor(retention),
         }),
       });
@@ -296,15 +293,6 @@ export default function Settings() {
             onChange={(e) => setTrashDays(e.target.value)}
             required
           />
-        </label>
-
-        <label className="checkbox-block">
-          <input
-            type="checkbox"
-            checked={requireApproval}
-            onChange={(e) => setRequireApproval(e.target.checked)}
-          />
-          Require admin approval for new registrations
         </label>
 
         <button className="btn btn-primary" type="submit" disabled={saving}>

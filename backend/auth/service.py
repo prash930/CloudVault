@@ -3,7 +3,7 @@ import hashlib
 import base64
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from jose import jwt
+from jose import JWTError, jwt
 from backend.config import settings
 
 
@@ -47,3 +47,22 @@ def blacklist_token(token: str):
 
 def is_token_blacklisted(token: str) -> bool:
     return token in blacklisted_tokens
+
+
+def create_password_reset_token(user_id: int) -> str:
+    return create_access_token(
+        data={"sub": str(user_id), "purpose": "password_reset"},
+        expires_delta=timedelta(minutes=settings.PASSWORD_RESET_EXPIRE_MINUTES),
+    )
+
+
+def verify_password_reset_token(token: str) -> Optional[int]:
+    if is_token_blacklisted(token):
+        return None
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        if payload.get("purpose") != "password_reset":
+            return None
+        return int(payload["sub"])
+    except (JWTError, KeyError, TypeError, ValueError):
+        return None

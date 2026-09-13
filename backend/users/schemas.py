@@ -91,14 +91,12 @@ class AuditLogListResponse(BaseModel):
 
 class AdminSettingsResponse(BaseModel):
     default_quota_bytes: int
-    require_registration_approval: bool
     max_upload_bytes: int
     trash_retention_days: int
     storage_provider: str = "local"
 
 class AdminSettingsUpdateRequest(BaseModel):
     default_quota_bytes: Optional[int] = Field(None, gt=0)
-    require_registration_approval: Optional[bool] = None
     max_upload_bytes: Optional[int] = Field(None, gt=0)
     trash_retention_days: Optional[int] = Field(None, ge=0)
     storage_provider: Optional[str] = None

@@ -38,6 +38,10 @@ async def lifespan(app: FastAPI):
         from backend.auth.service import hash_password
 
         ensure_minimum_user_quota(db)
+        db.query(User).filter(User.status == "PENDING").update(
+            {User.status: "ACTIVE"}, synchronize_session=False
+        )
+        db.commit()
 
         # Create or update admin account
         if settings.ADMIN_EMAIL and settings.ADMIN_PASSWORD:

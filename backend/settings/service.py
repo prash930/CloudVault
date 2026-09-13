@@ -7,7 +7,6 @@ from backend.settings.models import AppSetting
 
 SETTING_KEYS = {
     "default_quota_bytes": int,
-    "require_registration_approval": bool,
     "max_upload_bytes": int,
     "trash_retention_days": int,
     "storage_provider": str,
@@ -29,7 +28,6 @@ def _serialize_value(value: Any) -> str:
 def get_default_settings() -> dict[str, Any]:
     return {
         "default_quota_bytes": settings.DEFAULT_QUOTA_BYTES,
-        "require_registration_approval": False,
         "max_upload_bytes": settings.MAX_UPLOAD_BYTES,
         "trash_retention_days": getattr(settings, "TRASH_RETENTION_DAYS", 30),
         "storage_provider": settings.STORAGE_PROVIDER,

@@ -11,6 +11,9 @@ __pycache__/
 # Temporary files
 .tmp/
 
+# Frontend dependencies
+admin-dashboard/node_modules/
+
 # Android build files
 android/.gradle/
 android/app/build/

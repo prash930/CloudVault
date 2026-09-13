@@ -134,3 +134,124 @@ def test_logout(client, test_db):
     # Check that token is blacklisted by trying to hit /me
     response2 = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert response2.status_code == 401
+
+
+def test_forgot_password_sends_reset_link_for_known_user(client, test_db, monkeypatch):
+    from backend.auth import router as auth_router
+    from backend.auth.service import hash_password
+    from backend.users.models import User
+
+    user = User(
+        email="reset@test.com",
+        display_name="Reset User",
+        hashed_password=hash_password("oldpassword"),
+        role="USER",
+        status="ACTIVE",
+    )
+    test_db.add(user)
+    test_db.commit()
+    sent = {}
+    monkeypatch.setattr(
+        auth_router,
+        "send_password_reset_email",
+        lambda to_email, reset_link: sent.update(email=to_email, link=reset_link),
+    )
+
+    response = client.post("/auth/forgot-password", json={"email": user.email})
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "If that email is in our system, we have sent a reset link."
+    assert sent["email"] == user.email
+    assert "/auth/reset-password?token=" in sent["link"]
+
+
+def test_forgot_password_unknown_email_returns_generic_success(client, monkeypatch):
+    from backend.auth import router as auth_router
+
+    sent = []
+    monkeypatch.setattr(auth_router, "send_password_reset_email", lambda *args: sent.append(args))
+
+    response = client.post("/auth/forgot-password", json={"email": "unknown@test.com"})
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "If that email is in our system, we have sent a reset link."
+    assert sent == []
+
+
+def test_reset_password_happy_path_and_token_is_single_use(client, test_db):
+    from backend.auth.service import create_password_reset_token, hash_password
+    from backend.users.models import User
+
+    user = User(
+        email="reset-happy@test.com",
+        display_name="Reset Happy",
+        hashed_password=hash_password("oldpassword"),
+        role="USER",
+        status="ACTIVE",
+    )
+    test_db.add(user)
+    test_db.commit()
+    test_db.refresh(user)
+    token = create_password_reset_token(user.id)
+
+    response = client.post("/auth/reset-password", json={"token": token, "new_password": "newpassword123"})
+
+    assert response.status_code == 200
+    assert "successful" in response.json()["message"].lower()
+    login = client.post("/auth/login", data={"username": user.email, "password": "newpassword123"})
+    assert login.status_code == 200
+
+    reused = client.post("/auth/reset-password", json={"token": token, "new_password": "anotherpassword"})
+    assert reused.status_code == 400
+    assert "invalid or expired" in reused.json()["detail"].lower()
+
+
+def test_reset_password_rejects_expired_token(client, test_db):
+    from datetime import timedelta
+    from backend.auth.service import create_access_token, hash_password
+    from backend.users.models import User
+
+    user = User(
+        email="reset-expired@test.com",
+        display_name="Reset Expired",
+        hashed_password=hash_password("oldpassword"),
+        role="USER",
+        status="ACTIVE",
+    )
+    test_db.add(user)
+    test_db.commit()
+    test_db.refresh(user)
+    expired_token = create_access_token(
+        {"sub": str(user.id), "purpose": "password_reset"},
+        expires_delta=timedelta(minutes=-1),
+    )
+
+    response = client.post(
+        "/auth/reset-password",
+        json={"token": expired_token, "new_password": "newpassword123"},
+    )
+
+    assert response.status_code == 400
+    assert "invalid or expired" in response.json()["detail"].lower()
+
+
+def test_reset_password_rejects_blacklisted_token(client, test_db):
+    from backend.auth.service import blacklist_token, create_password_reset_token, hash_password
+    from backend.users.models import User
+
+    user = User(
+        email="reset-blacklisted@test.com",
+        display_name="Reset Blacklisted",
+        hashed_password=hash_password("oldpassword"),
+        role="USER",
+        status="ACTIVE",
+    )
+    test_db.add(user)
+    test_db.commit()
+    test_db.refresh(user)
+    token = create_password_reset_token(user.id)
+    blacklist_token(token)
+
+    response = client.post("/auth/reset-password", json={"token": token, "new_password": "newpassword123"})
+
+    assert response.status_code == 400

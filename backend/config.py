@@ -22,6 +22,16 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
 
+    # Password reset email
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = "noreply@cloudbox.local"
+    SMTP_USE_TLS: bool = True
+    PASSWORD_RESET_EXPIRE_MINUTES: int = 30
+    FRONTEND_BASE_URL: str = "http://localhost:8000"
+
     # Storage
     STORAGE_PROVIDER: str = "local"
     STORAGE_ROOT_DIR: str = "./storage_data"
