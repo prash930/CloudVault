@@ -19,7 +19,7 @@ android {
         // Backend URL — change for your environment:
         //   Android emulator:     http://10.0.2.2:8000
         //   Physical phone (LAN): http://YOUR_PC_LAN_IP:8000  (backend: uvicorn --host 0.0.0.0 --port 8000)
-        buildConfigField("String", "BASE_URL", "\"https://cloudbox-ltni.onrender.com\"")
+        buildConfigField("String", "BASE_URL", "\"https://cloudvault-7890806d.fastapicloud.dev\"")
     }
 
     buildTypes {

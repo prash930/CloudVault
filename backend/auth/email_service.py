@@ -6,10 +6,9 @@ from backend.config import settings
 
 
 def send_password_reset_email(to_email: str, reset_link: str) -> None:
-    """Send a password reset email, or print its link when SMTP is not configured."""
+    """Send a password reset email without logging its sensitive link."""
     if not settings.SMTP_HOST:
-        print(f"Password reset link for {to_email}: {reset_link}")
-        return
+        raise RuntimeError("SMTP is not configured")
 
     message = MIMEMultipart("alternative")
     message["Subject"] = "Reset your CloudBox password"

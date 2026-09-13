@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     SMTP_FROM_EMAIL: str = "noreply@cloudbox.local"
     SMTP_USE_TLS: bool = True
     PASSWORD_RESET_EXPIRE_MINUTES: int = 30
-    FRONTEND_BASE_URL: str = "http://localhost:8000"
+    FRONTEND_BASE_URL: str = "https://cloudvault-7890806d.fastapicloud.dev"
 
     # Storage
     STORAGE_PROVIDER: str = "local"

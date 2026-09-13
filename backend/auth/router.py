@@ -72,15 +72,15 @@ def logout(token: str = Depends(oauth2_scheme)):
 @router.post("/forgot-password", response_model=schemas.MessageResponse)
 @limiter.limit("3/hour")
 def forgot_password(request: Request, req: schemas.ForgotPasswordRequest, db: Session = Depends(get_db)):
-    user = get_user_by_email(db, req.email)
-    if user:
-        token = service.create_password_reset_token(user.id)
-        reset_link = f"{settings.FRONTEND_BASE_URL.rstrip('/')}/auth/reset-password?token={token}"
-        try:
+    try:
+        user = get_user_by_email(db, req.email)
+        if user:
+            token = service.create_password_reset_token(user.id)
+            reset_link = f"{settings.FRONTEND_BASE_URL.rstrip('/')}/auth/reset-password?token={token}"
             send_password_reset_email(user.email, reset_link)
-        except Exception:
-            # Do not expose delivery failures or account existence to the caller.
-            logger.exception("Failed to deliver password reset email")
+    except Exception:
+        # Do not expose delivery failures, account existence, or reset links.
+        logger.exception("Password-reset processing failed")
     return {"message": "If that email is in our system, we have sent a reset link."}
 
 
