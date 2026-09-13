@@ -8,7 +8,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,7 +19,6 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,7 +35,6 @@ fun RegisterScreen(
     var confirmPasswordVisible by remember { mutableStateOf(false) }
     
     val uiState by viewModel.uiState.collectAsState()
-    val scope = rememberCoroutineScope()
     var showSuccessDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(uiState.registerSuccess) {
@@ -73,7 +70,7 @@ fun RegisterScreen(
             AlertDialog(
                 onDismissRequest = { },
                 title = { Text("Success") },
-                text = { Text("Registration submitted! An admin will review your request.") },
+                text = { Text("Registration successful! You can sign in now.") },
                 confirmButton = {
                     TextButton(onClick = onRegisterSuccess) { Text("OK") }
                 }
@@ -87,17 +84,6 @@ fun RegisterScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Your account requires admin approval. You will be notified once approved.", color = MaterialTheme.colorScheme.onSecondaryContainer, style = MaterialTheme.typography.bodyMedium)
-                }
-            }
-            Spacer(modifier = Modifier.height(24.dp))
             OutlinedTextField(
                 value = email, onValueChange = { email = it }, label = { Text("Email") },
                 modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
