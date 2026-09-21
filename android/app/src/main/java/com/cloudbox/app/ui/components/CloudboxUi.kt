@@ -325,17 +325,28 @@ fun ActionTile(icon: ImageVector, label: String, onClick: () -> Unit) {
 }
 
 @Composable
-fun FileRowCard(file: CloudFile, subtitle: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun FileRowCard(
+    file: CloudFile,
+    subtitle: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    leading: (@Composable () -> Unit)? = null,
+    selected: Boolean = false
+) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(CloudCard)
+            .background(if (selected) CloudSoft else CloudCard)
             .clickable(onClick = onClick)
             .padding(12.dp)
         ,
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (leading != null) {
+            leading()
+            Spacer(Modifier.width(12.dp))
+        }
         FileGlyph(file)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {

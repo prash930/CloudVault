@@ -26,9 +26,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Image
@@ -48,6 +51,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -67,12 +71,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -85,6 +92,7 @@ import com.cloudbox.app.BuildConfig
 import com.cloudbox.app.data.api.models.CloudFile
 import com.cloudbox.app.data.api.models.ShareOut
 import com.cloudbox.app.data.local.TokenManager
+import com.cloudbox.app.data.util.DownloadHelper
 import com.cloudbox.app.ui.components.CloudBoxTopBar
 import com.cloudbox.app.ui.components.FileGlyph
 import com.cloudbox.app.ui.components.FileGlyphFrom
@@ -220,11 +228,19 @@ fun HomeScreen(
                     onOpenPreview = { file -> if (file.is_folder) viewModel.openFolder(file) else onOpenPreview(file.id) },
                     onDownload = { file ->
                         val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
-                        viewModel.download(file, dir)
+                        viewModel.download(file, dir) { saved ->
+                            val uri = DownloadHelper.publishToDownloads(context, saved, file.mime_type)
+                            Toast.makeText(
+                                context,
+                                if (uri != null) "Saved to Downloads/Cloudbox/${saved.name}" else "Saved to app storage (${saved.absolutePath})",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
                     },
                     onShare = onOpenShare,
                     onRename = viewModel::rename,
                     onTrash = viewModel::moveToTrash,
+                    onTrashMultiple = viewModel::moveMultipleToTrash,
                     onShowTrash = { showTrash = true }
                 )
                 HomeTab.Shared -> SharedView(
@@ -410,9 +426,16 @@ private fun FilesView(
     onShare: (Int) -> Unit,
     onRename: (CloudFile, String) -> Unit,
     onTrash: (CloudFile) -> Unit,
+    onTrashMultiple: (List<CloudFile>) -> Unit,
     onShowTrash: () -> Unit
 ) {
     var newFolderDialog by remember { mutableStateOf(false) }
+    var selectionMode by remember { mutableStateOf(false) }
+    val selected = remember { mutableStateListOf<CloudFile>() }
+
+    fun toggleSelect(file: CloudFile) {
+        if (selected.contains(file)) selected.remove(file) else selected.add(file)
+    }
 
     Column(
         modifier = Modifier
@@ -444,18 +467,44 @@ private fun FilesView(
         Spacer(Modifier.height(8.dp))
 
         Row(verticalAlignment = Alignment.CenterVertically) {
-            if (uiState.selectedCategory == null && uiState.folderStack.isNotEmpty()) {
-                TextButton(onClick = onUp) { Text("Up: ${uiState.folderStack.last().filename}") }
-            }
-            Spacer(Modifier.weight(1f))
-            SortMenu(uiState.sort, onSort)
-            IconButton(onClick = onShowTrash) {
-                Icon(Icons.Default.Delete, contentDescription = "Trash", tint = CloudBlue)
-            }
-            IconButton(onClick = {
-                if (uiState.selectedCategory == null) newFolderDialog = true
-            }) {
-                Icon(Icons.Default.Add, contentDescription = "New folder", tint = CloudBlue)
+            if (selectionMode) {
+                IconButton(onClick = { selectionMode = false; selected.clear() }) {
+                    Icon(Icons.Default.Close, contentDescription = "Cancel", tint = CloudNavy)
+                }
+                Text("${selected.size} selected", color = CloudNavy, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.weight(1f))
+                IconButton(
+                    enabled = selected.isNotEmpty(),
+                    onClick = { onTrashMultiple(selected.toList()); selectionMode = false; selected.clear() }
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = "Move selected to trash", tint = if (selected.isNotEmpty()) CloudBlue else CloudMuted)
+                }
+                IconButton(onClick = {
+                    if (selected.size == uiState.files.size) selected.clear()
+                    else {
+                        selected.clear()
+                        selected.addAll(uiState.files)
+                    }
+                }) {
+                    Icon(Icons.Default.CheckCircle, contentDescription = "Select all", tint = CloudBlue)
+                }
+            } else {
+                if (uiState.selectedCategory == null && uiState.folderStack.isNotEmpty()) {
+                    TextButton(onClick = onUp) { Text("Up: ${uiState.folderStack.last().filename}") }
+                }
+                Spacer(Modifier.weight(1f))
+                SortMenu(uiState.sort, onSort)
+                IconButton(onClick = onShowTrash) {
+                    Icon(Icons.Default.Delete, contentDescription = "Trash", tint = CloudBlue)
+                }
+                IconButton(onClick = { selectionMode = true }) {
+                    Icon(Icons.Default.CheckCircle, contentDescription = "Select files", tint = CloudBlue)
+                }
+                IconButton(onClick = {
+                    if (uiState.selectedCategory == null) newFolderDialog = true
+                }) {
+                    Icon(Icons.Default.Add, contentDescription = "New folder", tint = CloudBlue)
+                }
             }
         }
 
@@ -477,7 +526,17 @@ if (uiState.isLoading) {
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxSize()) {
                 items(uiState.files, key = { it.id }) { file ->
-                    FileListItem(file, onOpenPreview, onDownload, onShare, onRename, onTrash)
+                    FileListItem(
+                        file = file,
+                        onOpenPreview = onOpenPreview,
+                        onDownload = onDownload,
+                        onShare = onShare,
+                        onRename = onRename,
+                        onTrash = onTrash,
+                        selectionMode = selectionMode,
+                        isSelected = file in selected,
+                        onToggleSelect = { toggleSelect(file) }
+                    )
                 }
             }
         }
@@ -538,7 +597,10 @@ private fun FileListItem(
     onDownload: (CloudFile) -> Unit,
     onShare: (Int) -> Unit,
     onRename: (CloudFile, String) -> Unit,
-    onTrash: (CloudFile) -> Unit
+    onTrash: (CloudFile) -> Unit,
+    selectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onToggleSelect: () -> Unit = {}
 ) {
     var menu by remember { mutableStateOf(false) }
     var rename by remember { mutableStateOf(false) }
@@ -547,14 +609,27 @@ private fun FileListItem(
         FileRowCard(
             file = file,
             subtitle = if (file.is_folder) "Folder" else "${formatBytes(file.size_bytes)}  \u2022  ${formatDateTime(file.updated_at)}",
-            onClick = { onOpenPreview(file) },
-            modifier = Modifier.fillMaxWidth()
+            onClick = { if (selectionMode) onToggleSelect() else onOpenPreview(file) },
+            modifier = Modifier.fillMaxWidth(),
+            selected = isSelected,
+            leading = if (selectionMode) {
+                {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = { onToggleSelect() }
+                    )
+                }
+            } else {
+                null
+            }
         )
         Box(modifier = Modifier.align(Alignment.TopEnd)) {
-            IconButton(onClick = { menu = true }) {
-                Icon(Icons.Default.MoreVert, contentDescription = "Actions", tint = CloudMuted)
+            if (!selectionMode) {
+                IconButton(onClick = { menu = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "Actions", tint = CloudMuted)
+                }
             }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            DropdownMenu(expanded = menu && !selectionMode, onDismissRequest = { menu = false }) {
                 DropdownMenuItem(
                     text = { Text(if (file.is_folder) "Open" else "Preview") },
                     onClick = { menu = false; onOpenPreview(file) },
@@ -658,6 +733,7 @@ private fun ProfileView(
     viewModel: HomeViewModel
 ) {
     val context = LocalContext.current
+    val focusRequester = remember { FocusRequester() }
     var name by remember { mutableStateOf(uiState.userName) }
     var email by remember { mutableStateOf(uiState.userEmail) }
     var password by remember { mutableStateOf("") }
@@ -675,7 +751,16 @@ private fun ProfileView(
             AvatarCircle(hasAvatar = uiState.hasAvatar1, url = BuildConfig.BASE_URL + "auth/avatar/1", onClick = onEditPhotos)
         }
         Spacer(Modifier.height(12.dp))
-        Text(uiState.userName, color = CloudNavy, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(uiState.userName, color = CloudNavy, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            IconButton(onClick = { focusRequester.requestFocus() }) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit your name", tint = CloudBlue, modifier = Modifier.size(18.dp))
+            }
+        }
         Text(uiState.userEmail, color = CloudMuted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
 
         Spacer(Modifier.height(20.dp))
@@ -695,7 +780,9 @@ private fun ProfileView(
                     onValueChange = { name = it },
                     label = { Text("Display name") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester),
                     shape = RoundedCornerShape(14.dp)
                 )
                 Spacer(Modifier.height(10.dp))

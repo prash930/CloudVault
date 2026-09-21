@@ -49,6 +49,7 @@ import com.cloudbox.app.ui.components.fileVisual
 import com.cloudbox.app.ui.components.formatBytes
 import com.cloudbox.app.ui.components.formatDate
 import com.cloudbox.app.ui.components.formatDateTime
+import com.cloudbox.app.data.util.DownloadHelper
 import com.cloudbox.app.ui.screens.home.HomeViewModel
 import com.cloudbox.app.ui.theme.CloudCard
 import com.cloudbox.app.ui.theme.CloudMuted
@@ -184,7 +185,14 @@ fun FilePreviewScreen(
                 ActionTile(Icons.Default.OpenInNew, "Open", onClick = { openExternally() })
                 ActionTile(Icons.Default.Download, "Download", onClick = {
                     val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
-                    viewModel.download(file, dir)
+                    viewModel.download(file, dir) { saved ->
+                        val uri = DownloadHelper.publishToDownloads(context, saved, file.mime_type)
+                        Toast.makeText(
+                            context,
+                            if (uri != null) "Saved to Downloads/Cloudbox/${saved.name}" else "Saved to app storage (${saved.absolutePath})",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
                 })
                 if (!file.is_folder) {
                     ActionTile(Icons.Default.Share, "Share", onClick = { onShare(file.id) })

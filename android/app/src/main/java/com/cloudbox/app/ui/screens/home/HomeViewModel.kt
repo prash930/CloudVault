@@ -285,15 +285,17 @@ class HomeViewModel : ViewModel() {
         uploadPending(contentResolver) {}
     }
 
-    fun download(file: CloudFile, targetDir: File) {
+    fun download(file: CloudFile, targetDir: File, onSuccess: ((File) -> Unit)? = null) {
         viewModelScope.launch {
             upsertTransfer(TransferItem(file.filename, "Download", 0f, "Running"))
             val result = fileRepository.download(file, targetDir) { progress ->
                 upsertTransfer(TransferItem(file.filename, "Download", progress, "Running"))
             }
             if (result.isSuccess) {
+                val saved = result.getOrNull() ?: File(targetDir, file.filename)
                 upsertTransfer(TransferItem(file.filename, "Download", 1f, "Complete"))
                 _uiState.update { it.copy(successMessage = "Downloaded ${file.filename}") }
+                onSuccess?.invoke(saved)
             } else {
                 upsertTransfer(TransferItem(file.filename, "Download", 0f, "Failed"))
                 _uiState.update { it.copy(error = result.exceptionOrNull()?.message) }
@@ -342,6 +344,26 @@ class HomeViewModel : ViewModel() {
             } else {
                 _uiState.update { it.copy(error = result.exceptionOrNull()?.message) }
             }
+        }
+    }
+
+    fun moveMultipleToTrash(files: List<CloudFile>) {
+        if (files.isEmpty()) return
+        viewModelScope.launch {
+            var failed = 0
+            files.forEach { file ->
+                val result = fileRepository.moveToTrash(file.id)
+                if (result.isFailure) failed += 1
+            }
+            if (failed == 0) {
+                _uiState.update { it.copy(successMessage = "${files.size} file(s) moved to trash") }
+            } else {
+                _uiState.update { it.copy(error = "$failed file(s) could not be moved to trash") }
+            }
+            loadFiles()
+            loadRecent()
+            loadTrash()
+            loadStorageUsage()
         }
     }
 
