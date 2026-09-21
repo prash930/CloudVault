@@ -28,6 +28,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -63,24 +66,39 @@ fun FilePreviewScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val file = viewModel.fileById(fileId)
+    var isOpening by remember { mutableStateOf(false) }
+
+    fun launchIntent(savedFile: File) {
+        try {
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", savedFile)
+            val mimeType = MimeTypeMap.getSingleton()
+                .getMimeTypeFromExtension(savedFile.extension.lowercase())
+                ?: file?.mime_type
+                ?: "*/*"
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mimeType)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(context, "No app found to open this file", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     fun openExternally() {
+        if (file == null) return
         val cacheDir = File(context.cacheDir, "opened").apply { mkdirs() }
-        viewModel.openFile(file!!, cacheDir) { savedFile ->
-            try {
-                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", savedFile)
-                val mimeType = MimeTypeMap.getSingleton()
-                    .getMimeTypeFromExtension(savedFile.extension.lowercase())
-                    ?: "*/*"
-                val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, mimeType)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-            } catch (e: Exception) {
-                Toast.makeText(context, "No app found to open this file", Toast.LENGTH_SHORT).show()
-            }
+        val cachedFile = File(cacheDir, file.filename)
+        if (cachedFile.exists() && cachedFile.length() > 0 && (file.size_bytes <= 0 || cachedFile.length() == file.size_bytes)) {
+            launchIntent(cachedFile)
+            return
+        }
+        isOpening = true
+        Toast.makeText(context, "Opening ${file.filename}...", Toast.LENGTH_SHORT).show()
+        viewModel.openFile(file, cacheDir) { savedFile ->
+            isOpening = false
+            launchIntent(savedFile)
         }
     }
 

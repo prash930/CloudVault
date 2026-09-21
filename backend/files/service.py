@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import HTTPException, UploadFile
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from sqlalchemy.orm import Session
 
 from backend.config import settings
@@ -75,6 +75,16 @@ def get_storage_usage(db: Session, user_id: int) -> dict:
             "quota_formatted": "0.0 B",
             "usage_percentage": 0.0
         }
+
+    total_used = db.query(func.coalesce(func.sum(FileRecord.size_bytes), 0)).filter(
+        FileRecord.user_id == user_id,
+        FileRecord.is_folder.is_(False),
+    ).scalar() or 0
+
+    if user.storage_used_bytes != total_used:
+        user.storage_used_bytes = total_used
+        db.commit()
+        db.refresh(user)
 
     used = user.storage_used_bytes
     quota = user.storage_quota_bytes
@@ -373,16 +383,22 @@ def restore_from_trash(db: Session, user_id: int, file_id: int) -> FileRecord:
 async def permanently_delete(db: Session, user_id: int, file_id: int) -> None:
     record = get_owned_record(db, user_id, file_id, include_trashed=True)
     records = collect_descendants(db, user_id, record)
-    bytes_removed = 0
     for item in records:
         if not item.is_folder and item.storage_object_id:
             provider = get_provider_for_record(db, item)
             await provider.delete_file(item.storage_object_id)
-            bytes_removed += item.size_bytes or 0
     for item in records:
         db.delete(item)
-    update_storage_used(db, user_id, -bytes_removed)
     db.commit()
+
+    total_used = db.query(func.coalesce(func.sum(FileRecord.size_bytes), 0)).filter(
+        FileRecord.user_id == user_id,
+        FileRecord.is_folder.is_(False),
+    ).scalar() or 0
+    user = get_user_by_id(db, user_id)
+    if user:
+        user.storage_used_bytes = total_used
+        db.commit()
 
 
 def collect_descendants(db: Session, user_id: int, record: FileRecord) -> list[FileRecord]:

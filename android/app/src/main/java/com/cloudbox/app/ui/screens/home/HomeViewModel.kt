@@ -363,6 +363,9 @@ class HomeViewModel : ViewModel() {
             if (result.isSuccess) {
                 loadTrash()
                 loadStorageUsage()
+                loadFiles()
+                loadRecent()
+                _uiState.update { it.copy(successMessage = "Permanently deleted") }
             } else {
                 _uiState.update { it.copy(error = result.exceptionOrNull()?.message) }
             }

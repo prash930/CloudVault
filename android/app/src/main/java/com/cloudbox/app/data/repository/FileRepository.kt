@@ -192,9 +192,9 @@ class FileRepository {
     private fun writeResponseBody(body: ResponseBody, target: File, onProgress: (Float) -> Unit) {
         val total = body.contentLength()
         var written = 0L
-        body.byteStream().use { input ->
-            FileOutputStream(target).use { output ->
-                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        body.byteStream().buffered(65536).use { input ->
+            FileOutputStream(target).buffered(65536).use { output ->
+                val buffer = ByteArray(65536)
                 while (true) {
                     val read = input.read(buffer)
                     if (read == -1) break
@@ -202,6 +202,7 @@ class FileRepository {
                     written += read
                     if (total > 0) onProgress(written.toFloat() / total.toFloat())
                 }
+                output.flush()
             }
         }
         onProgress(1f)
