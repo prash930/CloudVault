@@ -89,9 +89,17 @@ class FileRepository {
 
     suspend fun permanentlyDelete(fileId: Int): Result<String> {
         return try {
-            val result = handleResponse(api.permanentlyDelete(fileId))
-            if (result.isSuccess) Result.success(result.getOrNull()?.message ?: "Deleted")
-            else Result.failure(result.exceptionOrNull() ?: Exception("Unknown error"))
+            val response = api.permanentlyDelete(fileId)
+            if (response.isSuccessful) {
+                Result.success(response.body()?.message ?: "File permanently deleted")
+            } else {
+                val errorMsg = try {
+                    gson.fromJson(response.errorBody()?.string(), ErrorResponse::class.java).detail
+                } catch (e: Exception) {
+                    "Failed to delete file"
+                }
+                Result.failure(Exception(errorMsg))
+            }
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -223,6 +231,7 @@ private class ProgressUriRequestBody(
                 if (length > 0) onProgress(uploaded.toFloat() / length.toFloat())
             }
         }
+        sink.flush()
         onProgress(1f)
     }
 }

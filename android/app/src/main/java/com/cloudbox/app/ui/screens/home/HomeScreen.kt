@@ -672,10 +672,7 @@ private fun ProfileView(
             modifier = Modifier.fillMaxWidth(),
             contentAlignment = Alignment.Center
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                AvatarCircle(hasAvatar = uiState.hasAvatar1, url = BuildConfig.BASE_URL + "auth/avatar/1", onClick = onEditPhotos)
-                AvatarCircle(hasAvatar = uiState.hasAvatar2, url = BuildConfig.BASE_URL + "auth/avatar/2", onClick = onEditPhotos)
-            }
+            AvatarCircle(hasAvatar = uiState.hasAvatar1, url = BuildConfig.BASE_URL + "auth/avatar/1", onClick = onEditPhotos)
         }
         Spacer(Modifier.height(12.dp))
         Text(uiState.userName, color = CloudNavy, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
