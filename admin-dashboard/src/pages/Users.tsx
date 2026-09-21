@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import { apiRequest } from "../api/client";
 import type { User } from "../types";
 import StatusBadge, { StorageBar } from "../components/StatusBadge";
-import ConfirmDialog from "../components/ConfirmDialog";
 import { QUOTA_PRESETS, formatDate, parseQuotaInput } from "../utils/format";
 
 export default function Users() {
@@ -16,8 +15,11 @@ export default function Users() {
   const [customQuota, setCustomQuota] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [confirm, setConfirm] = useState<{ action: string; status?: string } | null>(null);
   const [showEmailCol, setShowEmailCol] = useState(true);
+  const [resetTarget, setResetTarget] = useState<User | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [resetError, setResetError] = useState("");
 
   async function loadUsers() {
     const params = new URLSearchParams();
@@ -38,21 +40,6 @@ export default function Users() {
     setError("");
   }
 
-  async function runStatusUpdate(status: string) {
-    if (!selected) return;
-    if (["WARNED", "SUSPENDED", "BANNED"].includes(status) && !reason.trim()) {
-      setError("A reason is required for warn, suspend, or ban.");
-      return;
-    }
-    await apiRequest(`/admin/users/${selected.id}/update-status`, {
-      method: "POST",
-      body: JSON.stringify({ status, reason: reason.trim() || undefined }),
-    });
-    setMessage(`User status updated to ${status}`);
-    await loadUsers();
-    await selectUser(selected.id);
-  }
-
   async function runQuotaUpdate(bytes: number) {
     if (!selected) return;
     const result = await apiRequest<{ warning?: string; message: string }>(
@@ -62,6 +49,36 @@ export default function Users() {
     setMessage(result.warning ? `${result.message}` : result.message);
     await loadUsers();
     await selectUser(selected.id);
+  }
+
+  function openResetModal(user: User) {
+    setResetTarget(user);
+    setNewPassword("");
+    setConfirmPassword("");
+    setResetError("");
+  }
+
+  async function runResetPassword() {
+    if (!resetTarget) return;
+    if (newPassword.length < 8) {
+      setResetError("Password must be at least 8 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setResetError("Passwords do not match.");
+      return;
+    }
+    try {
+      await apiRequest<{ message: string }>(`/admin/users/${resetTarget.id}/reset-password`, {
+        method: "POST",
+        body: JSON.stringify({ new_password: newPassword }),
+      });
+      setMessage(`Password reset for ${resetTarget.email}`);
+      setResetTarget(null);
+      setError("");
+    } catch (err) {
+      setResetError(String((err as Error).message || err));
+    }
   }
 
   return (
@@ -133,33 +150,12 @@ export default function Users() {
             <StorageBar used={selected.storage_used_bytes} quota={selected.storage_quota_bytes} />
 
             <label>
-              Reason (for warn/suspend/ban/quota changes)
+              Reason (for quota changes)
               <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} />
             </label>
 
             <div className="action-row">
-              {selected.status === "PENDING" ? (
-                <button
-                  className="btn btn-primary"
-                  type="button"
-                  onClick={() =>
-                    apiRequest(`/admin/users/${selected.id}/approve`, { method: "POST" })
-                      .then(() => {
-                        setMessage("User approved");
-                        return loadUsers().then(() => selectUser(selected.id));
-                      })
-                      .catch((err) => setError(String(err.message || err)))
-                  }
-                >
-                  Approve
-                </button>
-              ) : null}
-              {selected.status !== "ACTIVE" && selected.status !== "PENDING" ? (
-                <button className="btn btn-secondary" type="button" onClick={() => runStatusUpdate("ACTIVE")}>Restore / Reactivate</button>
-              ) : null}
-              <button className="btn btn-secondary" type="button" onClick={() => setConfirm({ action: "warn", status: "WARNED" })}>Warn</button>
-              <button className="btn btn-secondary" type="button" onClick={() => setConfirm({ action: "suspend", status: "SUSPENDED" })}>Suspend</button>
-              <button className="btn btn-danger" type="button" onClick={() => setConfirm({ action: "ban", status: "BANNED" })}>Ban</button>
+              <button className="btn btn-primary" type="button" onClick={() => openResetModal(selected)}>Reset Password</button>
             </div>
 
             <h3>Storage Quota</h3>
@@ -195,32 +191,40 @@ export default function Users() {
         ) : null}
       </div>
 
-      <ConfirmDialog
-        open={Boolean(confirm?.action === "warn")}
-        title="Warn user"
-        message={`Warn ${selected?.email}?`}
-        confirmLabel="Warn user"
-        onConfirm={() => { setConfirm(null); runStatusUpdate("WARNED"); }}
-        onCancel={() => setConfirm(null)}
-      />
-      <ConfirmDialog
-        open={Boolean(confirm?.action === "suspend")}
-        title="Suspend user"
-        message={`Suspend ${selected?.email}? They will lose access to protected APIs.`}
-        confirmLabel="Suspend"
-        onConfirm={() => { setConfirm(null); runStatusUpdate("SUSPENDED"); }}
-        onCancel={() => setConfirm(null)}
-      />
-      <ConfirmDialog
-        open={Boolean(confirm?.action === "ban")}
-        title="Ban user"
-        message={`Permanently ban ${selected?.email}?`}
-        confirmLabel="Ban user"
-        requireText="BAN"
-        dangerous
-        onConfirm={() => { setConfirm(null); runStatusUpdate("BANNED"); }}
-        onCancel={() => setConfirm(null)}
-      />
+      {resetTarget ? (
+        <div className="modal-backdrop" onClick={() => setResetTarget(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Reset password</h2>
+            <p className="table-meta">
+              Set a new password for <strong>{resetTarget.display_name}</strong> ({resetTarget.email}).
+            </p>
+            {resetError ? <div className="alert alert-error">{resetError}</div> : null}
+            <label>
+              New password (min 8 characters)
+              <input
+                className="input"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                autoFocus
+              />
+            </label>
+            <label>
+              Confirm new password
+              <input
+                className="input"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+              />
+            </label>
+            <div className="modal-actions">
+              <button className="btn btn-secondary" type="button" onClick={() => setResetTarget(null)}>Cancel</button>
+              <button className="btn btn-primary" type="button" onClick={runResetPassword}>Save new password</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

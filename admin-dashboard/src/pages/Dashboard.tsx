@@ -18,13 +18,9 @@ export default function Dashboard() {
   if (!stats) return <div className="page-loading">Loading dashboard…</div>;
 
   const cards = [
-    { label: "Total Users", value: stats.total_users },
-    { label: "Pending Approvals", value: stats.pending_users, link: "/pending" },
+    { label: "Total Users", value: stats.total_users, link: "/users" },
     { label: "Active Users", value: stats.active_users },
-    { label: "Warned Users", value: stats.warned_users },
-    { label: "Suspended Users", value: stats.suspended_users },
-    { label: "Banned Users", value: stats.banned_users },
-    { label: "Total Files", value: stats.total_files },
+    { label: "Total Documents", value: stats.total_files, link: "/documents" },
     { label: "Storage Used", value: formatBytes(stats.total_storage_used_bytes) },
     { label: "Quota Allocated", value: formatBytes(stats.total_quota_bytes) },
   ];
@@ -33,7 +29,7 @@ export default function Dashboard() {
     <div className="page">
       <header className="page-header">
         <h1>Dashboard</h1>
-        <p>Overview of CloudBox service health and activity</p>
+        <p>Overview of CloudBox service and quick access to user documents and accounts</p>
       </header>
 
       <div className="stat-grid">
@@ -44,6 +40,17 @@ export default function Dashboard() {
             {card.link ? <Link to={card.link}>View</Link> : null}
           </div>
         ))}
+      </div>
+
+      <div className="quick-links">
+        <Link to="/documents" className="quick-link-card">
+          <strong>User Documents</strong>
+          <span>Browse all documents uploaded by every user, grouped under each user's name.</span>
+        </Link>
+        <Link to="/users" className="quick-link-card">
+          <strong>Users &amp; Accounts</strong>
+          <span>Manage every user's name, email, password resets, status, and storage quota.</span>
+        </Link>
       </div>
 
       <div className="two-col">

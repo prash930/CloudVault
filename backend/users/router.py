@@ -36,6 +36,11 @@ def list_users(
 def list_pending_users(db: Session = Depends(get_db)):
     return service.get_pending_users(db)
 
+@router.get("/users/files-overview", response_model=schemas.UsersFilesOverviewResponse)
+def get_users_files_overview(db: Session = Depends(get_db)):
+    users = service.get_users_with_files(db)
+    return {"users": users, "total": len(users)}
+
 @router.get("/users/{user_id}", response_model=schemas.UserAdminDetail)
 def get_user_detail(user_id: int, db: Session = Depends(get_db)):
     detail = service.get_user_admin_detail(db, user_id)
@@ -105,6 +110,28 @@ def update_user_status_endpoint(user_id: int, req: schemas.UpdateStatusRequest, 
         ip_address=request.client.host if request.client else None
     )
     return user
+
+@router.post("/users/{user_id}/reset-password", response_model=schemas.MessageResponse)
+def reset_user_password_endpoint(
+    user_id: int,
+    req: schemas.AdminResetPasswordRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    target_user = service.get_user_by_id(db, user_id)
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    service.reset_user_password(db, user_id, req.new_password)
+    create_audit_log(
+        db=db,
+        action="PASSWORD_RESET_BY_ADMIN",
+        admin_id=admin.id,
+        user_id=user_id,
+        reason="Admin reset user password",
+        ip_address=request.client.host if request.client else None,
+    )
+    return {"message": f"Password reset for {target_user.email}"}
 
 @router.post("/users/{user_id}/update-quota", response_model=schemas.QuotaChangeResponse)
 def update_user_quota_endpoint(

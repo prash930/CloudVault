@@ -3,8 +3,8 @@ import { useAuth } from "../auth/AuthContext";
 
 const links = [
   { to: "/", label: "Dashboard" },
-  { to: "/users", label: "Users" },
-  { to: "/pending", label: "Pending Approvals" },
+  { to: "/documents", label: "User Documents" },
+  { to: "/users", label: "Users & Accounts" },
   { to: "/files", label: "Files / Storage" },
   { to: "/audit-logs", label: "Audit Logs" },
   { to: "/settings", label: "Settings" },

@@ -86,6 +86,16 @@ def update_user_status(db: Session, user_id: int, new_status: str, reason: str =
         db.refresh(user)
     return user
 
+def reset_user_password(db: Session, user_id: int, new_password: str) -> Optional[User]:
+    from backend.auth.service import hash_password
+
+    user = get_user_by_id(db, user_id)
+    if user:
+        user.hashed_password = hash_password(new_password)
+        db.commit()
+        db.refresh(user)
+    return user
+
 def search_users(
     db: Session,
     *,
@@ -107,6 +117,46 @@ def search_users(
 def get_all_users(db: Session, skip: int = 0, limit: int = 100):
     users, _ = search_users(db, skip=skip, limit=limit)
     return users
+
+def get_users_with_files(db: Session) -> list[dict]:
+    from backend.files.models import FileRecord
+
+    users = db.query(User).order_by(User.display_name.asc()).all()
+    result = []
+    for user in users:
+        data = {c.name: getattr(user, c.name) for c in user.__table__.columns}
+        data.pop("hashed_password", None)
+        data.pop("avatar_1_path", None)
+        data.pop("avatar_2_path", None)
+
+        files = (
+            db.query(FileRecord)
+            .filter(
+                FileRecord.user_id == user.id,
+                FileRecord.is_trashed.is_(False),
+                FileRecord.parent_folder_id.is_(None),
+            )
+            .order_by(FileRecord.is_folder.desc(), FileRecord.filename.asc())
+            .all()
+        )
+        file_list = []
+        for record in files:
+            file_list.append({
+                "id": record.id,
+                "filename": record.filename,
+                "original_filename": record.original_filename,
+                "mime_type": record.mime_type,
+                "size_bytes": record.size_bytes or 0,
+                "is_folder": record.is_folder,
+                "parent_folder_id": record.parent_folder_id,
+                "is_trashed": record.is_trashed,
+                "moderation_status": record.moderation_status,
+                "created_at": record.created_at,
+                "updated_at": record.updated_at,
+            })
+        result.append({**data, "file_count": len([f for f in file_list if not f["is_folder"]]), "files": file_list})
+
+    return result
 
 def get_pending_users(db: Session):
     return db.query(User).filter(User.status == "PENDING").order_by(User.created_at.asc()).all()

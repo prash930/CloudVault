@@ -56,6 +56,19 @@ export interface FileItem {
   updated_at: string;
 }
 
+export interface UserAdminDetail extends User {
+  file_count: number;
+}
+
+export interface UserWithFiles extends UserAdminDetail {
+  files: FileItem[];
+}
+
+export interface UsersFilesOverview {
+  users: UserWithFiles[];
+  total: number;
+}
+
 export interface AuditLog {
   id: number;
   admin_id?: number;

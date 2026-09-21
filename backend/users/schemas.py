@@ -25,6 +25,29 @@ class UpdateStatusRequest(BaseModel):
     status: str
     reason: Optional[str] = None
 
+class AdminResetPasswordRequest(BaseModel):
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+class UserFileSummary(BaseModel):
+    id: int
+    filename: str
+    original_filename: str
+    mime_type: Optional[str] = None
+    size_bytes: int
+    is_folder: bool
+    parent_folder_id: Optional[int] = None
+    is_trashed: bool
+    moderation_status: str
+    created_at: datetime
+    updated_at: datetime
+
+class UserWithFiles(UserAdminDetail):
+    files: List[UserFileSummary] = []
+
+class UsersFilesOverviewResponse(BaseModel):
+    users: List[UserWithFiles]
+    total: int
+
 class UserListResponse(BaseModel):
     users: List[UserAdminView]
     total: int
