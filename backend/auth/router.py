@@ -1,0 +1,175 @@
+import logging
+
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session
+from backend.database import get_db
+from backend.auth import schemas, service
+from backend.auth.dependencies import get_current_user, oauth2_scheme
+from backend.users.service import get_user_by_email, get_user_by_id, create_user, record_login
+from backend.auth.email_service import send_password_reset_email
+from backend.config import settings
+from backend.middleware.rate_limit import limiter
+
+router = APIRouter(prefix="/auth", tags=["Authentication"])
+logger = logging.getLogger(__name__)
+
+@router.post("/register", response_model=schemas.MessageResponse)
+@limiter.limit("3/hour")
+def register(request: Request, user_data: schemas.RegisterRequest, db: Session = Depends(get_db)):
+    user = get_user_by_email(db, user_data.email)
+    if user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    hashed_password = service.hash_password(user_data.password)
+    create_user(db, user_data.email, user_data.display_name, hashed_password, status="ACTIVE")
+    return {"message": "Registration successful. You can sign in now."}
+
+@router.post("/login", response_model=schemas.TokenResponse)
+@limiter.limit("5/minute")
+def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = get_user_by_email(db, form_data.username)
+    if not user or not service.verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    if user.status in ["BANNED", "SUSPENDED"]:
+        raise HTTPException(status_code=403, detail=f"User account is {user.status.lower()}")
+    elif user.status == "PENDING":
+        raise HTTPException(status_code=403, detail="Account is pending admin approval")
+        
+    record_login(db, user)
+    access_token = service.create_access_token(data={"sub": str(user.id)})
+    return {"access_token": access_token, "token_type": "bearer", "user": user}
+
+@router.post("/admin/login", response_model=schemas.TokenResponse)
+@limiter.limit("5/minute")
+def admin_login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = get_user_by_email(db, form_data.username)
+    if not user or not service.verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    if user.status in ["BANNED", "SUSPENDED", "PENDING"]:
+        raise HTTPException(status_code=403, detail=f"Admin account is not active ({user.status.lower()})")
+    record_login(db, user)
+    access_token = service.create_access_token(data={"sub": str(user.id)})
+    return {"access_token": access_token, "token_type": "bearer", "user": user}
+
+@router.post("/logout")
+def logout(token: str = Depends(oauth2_scheme)):
+    service.blacklist_token(token)
+    return {"message": "Successfully logged out"}
+
+@router.post("/forgot-password", response_model=schemas.MessageResponse)
+@limiter.limit("3/hour")
+def forgot_password(request: Request, req: schemas.ForgotPasswordRequest, db: Session = Depends(get_db)):
+    try:
+        user = get_user_by_email(db, req.email)
+        if user:
+            token = service.create_password_reset_token(user.id)
+            reset_link = f"{settings.FRONTEND_BASE_URL.rstrip('/')}/auth/reset-password?token={token}"
+            send_password_reset_email(user.email, reset_link)
+    except Exception:
+        # Do not expose delivery failures, account existence, or reset links.
+        logger.exception("Password-reset processing failed")
+    return {"message": "If that email is in our system, we have sent a reset link."}
+
+
+@router.get("/reset-password", response_class=HTMLResponse)
+@limiter.limit("5/minute")
+def reset_password_page(request: Request):
+    return """<!doctype html>
+<html><head><meta charset=\"utf-8\"><title>Reset password</title>
+<style>body{font-family:system-ui;max-width:400px;margin:4rem auto;padding:1rem}input,button{box-sizing:border-box;width:100%;padding:.7rem;margin:.35rem 0}#message{min-height:1.5rem}</style>
+</head><body><h1>Reset password</h1><form id=\"form\"><input id=\"password\" type=\"password\" minlength=\"8\" placeholder=\"New password\" required><input id=\"confirm\" type=\"password\" minlength=\"8\" placeholder=\"Confirm new password\" required><button>Reset password</button></form><p id=\"message\"></p>
+<script>const token=new URLSearchParams(location.search).get('token'),form=document.getElementById('form'),message=document.getElementById('message');form.addEventListener('submit',async e=>{e.preventDefault();const password=document.getElementById('password').value;if(password!==document.getElementById('confirm').value){message.textContent='Passwords do not match.';return}const response=await fetch('/auth/reset-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token,new_password:password})});const body=await response.json();message.textContent=body.message||body.detail||'Unable to reset password.'})</script>
+</body></html>"""
+
+
+@router.post("/reset-password", response_model=schemas.MessageResponse)
+@limiter.limit("5/minute")
+def reset_password(request: Request, req: schemas.ResetPasswordRequest, db: Session = Depends(get_db)):
+    user_id = service.verify_password_reset_token(req.token)
+    if user_id is None:
+        raise HTTPException(status_code=400, detail="Invalid or expired password reset token")
+    user = get_user_by_id(db, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.hashed_password = service.hash_password(req.new_password)
+    db.commit()
+    service.blacklist_token(req.token)
+    return {"message": "Password reset successful. You can sign in now."}
+
+@router.get("/me", response_model=schemas.UserOut)
+def read_users_me(current_user = Depends(get_current_user)):
+    return current_user
+
+
+@router.put("/me", response_model=schemas.UserOut)
+def update_profile(
+    req: schemas.UpdateProfileRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    from backend.users.service import get_user_by_email
+
+    if req.display_name:
+        current_user.display_name = req.display_name
+    if req.email and req.email.lower() != current_user.email.lower():
+        existing = get_user_by_email(db, req.email)
+        if existing and existing.id != current_user.id:
+            raise HTTPException(status_code=400, detail="Email already registered")
+        current_user.email = req.email
+    if req.password:
+        current_user.hashed_password = service.hash_password(req.password)
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.post("/avatar/{slot}", response_model=schemas.UserOut)
+async def upload_avatar(
+    slot: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    if slot not in (1, 2):
+        raise HTTPException(status_code=400, detail="Slot must be 1 or 2")
+    content_type = (file.content_type or "").lower()
+    if not content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Please upload an image")
+    avatar_dir = Path(settings.STORAGE_ROOT_DIR) / "avatars"
+    avatar_dir.mkdir(parents=True, exist_ok=True)
+    extension = Path(file.filename or "photo.jpg").suffix or ".jpg"
+    path = avatar_dir / f"{current_user.id}_{slot}{extension}"
+    data = await file.read()
+    path.write_bytes(data)
+    if slot == 1:
+        current_user.avatar_1_path = str(path)
+    else:
+        current_user.avatar_2_path = str(path)
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.get("/avatar/{slot}")
+def get_avatar(slot: int, current_user=Depends(get_current_user)):
+    if slot not in (1, 2):
+        raise HTTPException(status_code=400, detail="Slot must be 1 or 2")
+    stored = current_user.avatar_1_path if slot == 1 else current_user.avatar_2_path
+    if not stored or not Path(stored).is_file():
+        raise HTTPException(status_code=404, detail="Avatar not found")
+    return FileResponse(stored)
