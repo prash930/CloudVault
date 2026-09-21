@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -122,10 +122,10 @@ def public_share_info(token: str):
 
 
 @app.get("/s/{token}/download")
-async def public_share_download(token: str):
+async def public_share_download(token: str, request: Request, inline: bool = False):
     from backend.files import share_service, service
+    from backend.files.router import build_range_streaming_response
     from backend.database import SessionLocal
-    from fastapi.responses import StreamingResponse
 
     db = SessionLocal()
     try:
@@ -133,11 +133,13 @@ async def public_share_download(token: str):
         if record.is_folder:
             raise HTTPException(status_code=400, detail="Folders cannot be downloaded directly")
         provider = service.get_provider_for_record(db, record)
-        headers = {"Content-Disposition": f'attachment; filename="{record.filename}"'}
-        return StreamingResponse(
-            provider.stream_file(record.storage_object_id),
-            media_type=record.mime_type or "application/octet-stream",
-            headers=headers,
+        return await build_range_streaming_response(
+            request=request,
+            provider=provider,
+            object_id=record.storage_object_id,
+            filename=record.filename,
+            mime_type=record.mime_type,
+            inline=inline,
         )
     finally:
         db.close()

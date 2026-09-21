@@ -1,6 +1,7 @@
 package com.cloudbox.app.ui.screens.preview
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Environment
 import android.webkit.MimeTypeMap
 import android.widget.Toast
@@ -17,12 +18,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.OpenInNew
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,17 +44,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
-import coil.compose.AsyncImage
+import coil3.compose.SubcomposeAsyncImage
+import coil3.compose.SubcomposeAsyncImageContent
 import com.cloudbox.app.BuildConfig
-import com.cloudbox.app.ui.components.BackRow
+import com.cloudbox.app.data.api.models.CloudFile
+import com.cloudbox.app.data.util.DownloadHelper
 import com.cloudbox.app.ui.components.ActionTile
+import com.cloudbox.app.ui.components.BackRow
 import com.cloudbox.app.ui.components.CloudboxScreen
+import com.cloudbox.app.ui.components.FullscreenImageViewer
+import com.cloudbox.app.ui.components.VideoPlayerModal
 import com.cloudbox.app.ui.components.fileVisual
 import com.cloudbox.app.ui.components.formatBytes
 import com.cloudbox.app.ui.components.formatDate
 import com.cloudbox.app.ui.components.formatDateTime
-import com.cloudbox.app.data.util.DownloadHelper
 import com.cloudbox.app.ui.screens.home.HomeViewModel
+import com.cloudbox.app.ui.theme.CloudBlue
 import com.cloudbox.app.ui.theme.CloudCard
 import com.cloudbox.app.ui.theme.CloudMuted
 import com.cloudbox.app.ui.theme.CloudNavy
@@ -68,6 +77,12 @@ fun FilePreviewScreen(
     val context = LocalContext.current
     val file = viewModel.fileById(fileId)
     var isOpening by remember { mutableStateOf(false) }
+    var showImageFull by remember { mutableStateOf(false) }
+    var showVideoPlayer by remember { mutableStateOf(false) }
+
+    val mediaUrl = remember(fileId) {
+        BuildConfig.BASE_URL + "files/$fileId/download"
+    }
 
     fun launchIntent(savedFile: File) {
         try {
@@ -116,6 +131,7 @@ fun FilePreviewScreen(
         }
 
         val isImage = file.mime_type?.startsWith("image/") == true
+        val isVideo = file.mime_type?.startsWith("video/") == true
         val (icon, tint, bg) = fileVisual(file)
 
         Column(
@@ -135,10 +151,26 @@ fun FilePreviewScreen(
                 contentAlignment = Alignment.Center
             ) {
                 if (isImage) {
-                    AsyncImage(
-                        model = BuildConfig.BASE_URL + "files/${file.id}/download",
+                    SubcomposeAsyncImage(
+                        model = mediaUrl,
                         contentDescription = file.filename,
-                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(20.dp))
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(20.dp))
+                            .clickable { showImageFull = true },
+                        loading = {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                androidx.compose.material3.CircularProgressIndicator(color = CloudBlue, strokeWidth = 3.dp)
+                            }
+                        },
+                        error = {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(48.dp))
+                            }
+                        },
+                        success = {
+                            SubcomposeAsyncImageContent()
+                        }
                     )
                 } else {
                     Box(
@@ -147,12 +179,26 @@ fun FilePreviewScreen(
                     ) {
                         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(48.dp))
                     }
-                    Text(
-                        if (isImage) "" else "Preview not available",
-                        color = CloudMuted,
-                        fontSize = 14.sp,
-                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp)
-                    )
+                    if (isVideo) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = "Play",
+                            tint = Color.White,
+                            modifier = Modifier
+                                .size(72.dp)
+                                .clip(CircleShape)
+                                .background(Color(0x88000000))
+                                .clickable { showVideoPlayer = true }
+                                .padding(10.dp)
+                        )
+                    } else {
+                        Text(
+                            "Preview not available",
+                            color = CloudMuted,
+                            fontSize = 14.sp,
+                            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp)
+                        )
+                    }
                 }
             }
 
@@ -183,6 +229,12 @@ fun FilePreviewScreen(
             Spacer(Modifier.height(20.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                 ActionTile(Icons.Default.OpenInNew, "Open", onClick = { openExternally() })
+                if (isVideo) {
+                    ActionTile(Icons.Default.PlayArrow, "Play", onClick = { showVideoPlayer = true })
+                }
+                if (isImage) {
+                    ActionTile(Icons.Default.Fullscreen, "View", onClick = { showImageFull = true })
+                }
                 ActionTile(Icons.Default.Download, "Download", onClick = {
                     val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
                     viewModel.download(file, dir) { saved ->
@@ -206,7 +258,24 @@ fun FilePreviewScreen(
             }
         }
     }
+
+    if (file != null && showImageFull) {
+        FullscreenImageViewer(
+            imageUrl = mediaUrl,
+            title = file.filename,
+            onDismiss = { showImageFull = false }
+        )
+    }
+
+    if (file != null && showVideoPlayer) {
+        VideoPlayerModal(
+            videoUrl = mediaUrl,
+            title = file.filename,
+            onDismiss = { showVideoPlayer = false }
+        )
+    }
 }
+
 
 @Composable
 private fun DetailRow(label: String, value: String) {

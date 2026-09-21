@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { apiRequest, getToken } from "../api/client";
+import { apiRequest, getToken, API_BASE_URL } from "../api/client";
 import type { FileItem, User } from "../types";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { formatBytes, formatDate } from "../utils/format";
@@ -50,16 +50,19 @@ export default function Files() {
       return;
     }
     const mime = selected.mime_type || "";
-    const previewable = mime.startsWith("image/") || mime.startsWith("text/") || mime === "application/pdf";
+    const previewable = mime.startsWith("image/") || mime.startsWith("video/") || mime.startsWith("text/") || mime === "application/pdf";
     if (!previewable) {
       setPreviewUrl(null);
       return;
     }
     let revoked: string | null = null;
-    fetch(`/admin/files/${selected.id}/download?inline=true`, {
+    fetch(`${API_BASE_URL}/admin/files/${selected.id}/download?inline=true`, {
       headers: { Authorization: `Bearer ${getToken()}` },
     })
-      .then((res) => res.blob())
+      .then((res) => {
+        if (!res.ok) throw new Error(`Preview failed (${res.status})`);
+        return res.blob();
+      })
       .then((blob) => {
         revoked = URL.createObjectURL(blob);
         setPreviewUrl(revoked);
@@ -84,39 +87,57 @@ export default function Files() {
   }
 
   async function downloadFile(file: FileItem) {
-    const response = await fetch(`/admin/files/${file.id}/download`, {
-      headers: { Authorization: `Bearer ${getToken()}` },
-    });
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = file.filename;
-    anchor.click();
-    URL.revokeObjectURL(url);
-    setMessage(`Downloaded ${file.filename}`);
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/files/${file.id}/download`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!response.ok) throw new Error(`Download failed (${response.status})`);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = file.filename;
+      anchor.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      setMessage(`Downloaded ${file.filename}`);
+    } catch (err) {
+      setError(String((err as Error).message || err));
+    }
   }
 
   async function trashFile(file: FileItem) {
-    await apiRequest(`/admin/files/${file.id}/trash`, { method: "POST" });
-    setMessage("Moved to trash");
-    await loadFiles();
-    setSelected(null);
+    try {
+      await apiRequest(`/admin/files/${file.id}/trash`, { method: "POST" });
+      setMessage("Moved to trash");
+      await loadFiles();
+      setSelected(null);
+    } catch (err) {
+      setError(String((err as Error).message || err));
+    }
   }
 
   async function restoreFile(file: FileItem) {
-    await apiRequest(`/admin/files/${file.id}/restore`, { method: "POST" });
-    setMessage("Restored from trash");
-    await loadFiles();
-    setSelected(null);
+    try {
+      await apiRequest(`/admin/files/${file.id}/restore`, { method: "POST" });
+      setMessage("Restored from trash");
+      await loadFiles();
+      setSelected(null);
+    } catch (err) {
+      setError(String((err as Error).message || err));
+    }
   }
 
   async function deleteFile(file: FileItem) {
-    await apiRequest(`/admin/files/${file.id}`, { method: "DELETE" });
-    setMessage("Permanently deleted");
-    setConfirmDelete(false);
-    await loadFiles();
-    setSelected(null);
+    try {
+      await apiRequest(`/admin/files/${file.id}`, { method: "DELETE" });
+      setMessage("Permanently deleted");
+      setConfirmDelete(false);
+      await loadFiles();
+      setSelected(null);
+    } catch (err) {
+      setConfirmDelete(false);
+      setError(String((err as Error).message || err));
+    }
   }
 
   return (
@@ -203,6 +224,8 @@ export default function Files() {
               {previewUrl ? (
                 selected.mime_type?.startsWith("image/") ? (
                   <img className="preview-image" src={previewUrl} alt={selected.filename} />
+                ) : selected.mime_type?.startsWith("video/") ? (
+                  <video className="preview-frame" src={previewUrl} controls />
                 ) : selected.mime_type === "application/pdf" ? (
                   <iframe className="preview-frame" src={previewUrl} title={selected.filename} />
                 ) : (

@@ -1,10 +1,10 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from backend.auth.dependencies import get_current_active_user
+from backend.auth.dependencies import get_current_active_user, get_current_active_user_flexible
 from backend.database import get_db
 from backend.files import schemas, service, share_service
 from backend.users.models import User
@@ -110,22 +110,97 @@ def get_file_endpoint(
     return service.get_owned_record(db, current_user.id, file_id, include_trashed=True)
 
 
+import re
+
+RANGE_HEADER_RE = re.compile(r"^bytes=(\d*)-(\d*)$")
+
+
+async def build_range_streaming_response(
+    request: Request,
+    provider,
+    object_id: str,
+    filename: str,
+    mime_type: Optional[str] = None,
+    inline: bool = False,
+):
+    total_size = await provider.get_file_size(object_id)
+    range_header = request.headers.get("Range")
+    disposition_type = "inline" if inline else "attachment"
+
+    if range_header:
+        match = RANGE_HEADER_RE.match(range_header.strip())
+        if match:
+            start_str, end_str = match.groups()
+            if start_str and end_str:
+                start = int(start_str)
+                end = int(end_str)
+            elif start_str:
+                start = int(start_str)
+                end = total_size - 1
+            elif end_str:
+                start = max(0, total_size - int(end_str))
+                end = total_size - 1
+            else:
+                start = 0
+                end = total_size - 1
+
+            if total_size > 0 and (start >= total_size or end >= total_size or start > end):
+                raise HTTPException(
+                    status_code=416,
+                    detail="Requested Range Not Satisfiable",
+                    headers={"Content-Range": f"bytes */{total_size}"},
+                )
+
+            content_length = max(0, end - start + 1) if total_size > 0 else 0
+            headers = {
+                "Content-Disposition": f'{disposition_type}; filename="{filename}"',
+                "Content-Range": f"bytes {start}-{end}/{total_size}",
+                "Accept-Ranges": "bytes",
+                "Content-Length": str(content_length),
+            }
+            return StreamingResponse(
+                provider.stream_file_range(object_id, start, end),
+                status_code=206,
+                media_type=mime_type or "application/octet-stream",
+                headers=headers,
+            )
+
+    headers = {
+        "Content-Disposition": f'{disposition_type}; filename="{filename}"',
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(total_size),
+    }
+    return StreamingResponse(
+        provider.stream_file(object_id),
+        status_code=200,
+        media_type=mime_type or "application/octet-stream",
+        headers=headers,
+    )
+
+
 @router.get("/{file_id}/download")
 async def download_file_endpoint(
     file_id: int,
-    current_user: User = Depends(get_current_active_user),
+    request: Request,
+    inline: bool = Query(False),
+    current_user: User = Depends(get_current_active_user_flexible),
     db: Session = Depends(get_db),
 ):
     record = service.get_owned_record(db, current_user.id, file_id)
     if record.is_folder:
         raise HTTPException(status_code=400, detail="Folders cannot be downloaded directly")
     provider = service.get_provider_for_record(db, record)
-    headers = {"Content-Disposition": f'attachment; filename="{record.filename}"'}
-    return StreamingResponse(
-        provider.stream_file(record.storage_object_id),
-        media_type=record.mime_type or "application/octet-stream",
-        headers=headers,
+    if not await provider.file_exists(record.storage_object_id):
+        raise HTTPException(status_code=404, detail="File bytes not found on storage")
+    return await build_range_streaming_response(
+        request=request,
+        provider=provider,
+        object_id=record.storage_object_id,
+        filename=record.filename,
+        mime_type=record.mime_type,
+        inline=inline,
     )
+
 
 
 @router.post("/{file_id}/rename", response_model=schemas.FileOut)

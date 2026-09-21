@@ -168,3 +168,52 @@ def test_suspended_user_cannot_upload(client, test_db):
     response = upload(client, token, "blocked.txt", b"blocked")
 
     assert response.status_code == 403
+
+
+def test_download_range_request_and_query_token(client, test_db, tmp_path, monkeypatch):
+    monkeypatch.setattr("backend.config.settings.STORAGE_ROOT_DIR", str(tmp_path))
+    user, token = make_user(test_db, "range-test@test.com")
+    data = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    file_id = upload(client, token, "video.mp4", data).json()["id"]
+
+    # 1. Full download
+    full_resp = client.get(f"/files/{file_id}/download", headers=auth(token))
+    assert full_resp.status_code == 200
+    assert full_resp.content == data
+    assert full_resp.headers["accept-ranges"] == "bytes"
+
+    # 2. Range request: bytes 0-9
+    range_resp = client.get(
+        f"/files/{file_id}/download",
+        headers={"Authorization": f"Bearer {token}", "Range": "bytes=0-9"},
+    )
+    assert range_resp.status_code == 206
+    assert range_resp.content == b"0123456789"
+    assert range_resp.headers["content-range"] == f"bytes 0-9/{len(data)}"
+    assert range_resp.headers["content-length"] == "10"
+
+    # 3. Range request: bytes 10-
+    range_resp2 = client.get(
+        f"/files/{file_id}/download",
+        headers={"Authorization": f"Bearer {token}", "Range": "bytes=10-"},
+    )
+    assert range_resp2.status_code == 206
+    assert range_resp2.content == data[10:]
+    assert range_resp2.headers["content-range"] == f"bytes 10-{len(data)-1}/{len(data)}"
+
+    # 4. Range request: suffix bytes -10
+    range_resp3 = client.get(
+        f"/files/{file_id}/download",
+        headers={"Authorization": f"Bearer {token}", "Range": "bytes=-10"},
+    )
+    assert range_resp3.status_code == 206
+    assert range_resp3.content == data[-10:]
+
+    # 5. Query token authentication (useful for media player / coil requests)
+    query_resp = client.get(
+        f"/files/{file_id}/download?token={token}",
+        headers={"Range": "bytes=0-4"},
+    )
+    assert query_resp.status_code == 206
+    assert query_resp.content == b"01234"
+

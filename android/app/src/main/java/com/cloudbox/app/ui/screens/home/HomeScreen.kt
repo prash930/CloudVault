@@ -87,7 +87,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.cloudbox.app.BuildConfig
 import com.cloudbox.app.data.api.models.CloudFile
 import com.cloudbox.app.data.api.models.ShareOut

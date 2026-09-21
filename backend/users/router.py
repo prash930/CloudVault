@@ -294,13 +294,14 @@ async def admin_download_file(
         reason="Admin downloaded user file",
         ip_address=request.client.host if request.client else None,
     )
-    provider = file_service.get_provider_for_record(db, record)
-    disposition = "inline" if inline else "attachment"
-    headers = {"Content-Disposition": f'{disposition}; filename="{record.filename}"'}
-    return StreamingResponse(
-        provider.stream_file(record.storage_object_id),
-        media_type=record.mime_type or "application/octet-stream",
-        headers=headers,
+    from backend.files.router import build_range_streaming_response
+    return await build_range_streaming_response(
+        request=request,
+        provider=provider,
+        object_id=record.storage_object_id,
+        filename=record.filename,
+        mime_type=record.mime_type,
+        inline=inline,
     )
 
 

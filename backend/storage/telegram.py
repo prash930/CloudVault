@@ -1,6 +1,7 @@
 import asyncio
 import io
 import json
+import os
 import uuid
 from typing import Any, AsyncIterator, BinaryIO, Optional
 
@@ -90,6 +91,39 @@ def _load_parts(record: TelegramStoredObject) -> list[dict]:
     return parts if isinstance(parts, list) else []
 
 
+def _get_cache_dir() -> str:
+    cache_dir = os.path.join(os.path.abspath(settings.STORAGE_ROOT_DIR), "cache", "telegram_chunks")
+    os.makedirs(cache_dir, exist_ok=True)
+    return cache_dir
+
+
+def _get_part_data(token: str, object_id: str, part: dict) -> bytes:
+    file_id = part.get("file_id")
+    if not file_id:
+        raise TelegramAPIError("Part is missing file_id")
+    cache_path = os.path.join(_get_cache_dir(), f"{object_id}_{part.get('index', 0)}_{file_id}.bin")
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, "rb") as f:
+                return f.read()
+        except OSError:
+            pass
+
+    meta = telegram_api(token, "getFile", {"file_id": file_id})
+    file_path = meta.get("file_path")
+    if not file_path:
+        raise TelegramAPIError("Telegram did not return a file_path")
+    data = download_telegram_file(token, file_path)
+    try:
+        temp_path = f"{cache_path}.tmp"
+        with open(temp_path, "wb") as f:
+            f.write(data)
+        os.replace(temp_path, cache_path)
+    except OSError:
+        pass
+    return data
+
+
 class TelegramStorageProvider(StorageProvider):
     """Stores binary objects as chunked documents in a Telegram chat (Telegram Drive)."""
 
@@ -116,6 +150,15 @@ class TelegramStorageProvider(StorageProvider):
         file_id = document.get("file_id")
         if not file_id:
             raise TelegramAPIError("Telegram did not return a file_id for the uploaded chunk")
+        
+        # Also cache newly uploaded chunk locally for immediate fast retrieval
+        try:
+            cache_path = os.path.join(_get_cache_dir(), f"{object_id}_{index}_{file_id}.bin")
+            with open(cache_path, "wb") as f:
+                f.write(chunk)
+        except OSError:
+            pass
+
         return {
             "index": index,
             "file_id": file_id,
@@ -167,21 +210,63 @@ class TelegramStorageProvider(StorageProvider):
             raise FileNotFoundError()
         buffer = io.BytesIO()
         for part in sorted(_load_parts(record), key=lambda item: int(item.get("index", 0))):
-            meta = telegram_api(token, "getFile", {"file_id": part["file_id"]})
-            file_path = meta.get("file_path")
-            if not file_path:
-                raise TelegramAPIError("Telegram did not return a file_path")
-            buffer.write(download_telegram_file(token, file_path))
+            data = _get_part_data(token, object_id, part)
+            buffer.write(data)
         return buffer.getvalue()
 
     async def retrieve_file(self, object_id: str) -> bytes:
         return await self._run(self._download_sync, object_id)
 
     async def stream_file(self, object_id: str) -> AsyncIterator[bytes]:
-        data = await self.retrieve_file(object_id)
+        token, _chat_id = get_telegram_credentials(self.db)
+        record = self.db.query(TelegramStoredObject).filter(TelegramStoredObject.object_id == object_id).first()
+        if not record:
+            raise FileNotFoundError()
+        parts = sorted(_load_parts(record), key=lambda item: int(item.get("index", 0)))
         chunk_size = 1024 * 1024
-        for offset in range(0, len(data), chunk_size):
-            yield data[offset : offset + chunk_size]
+        for part in parts:
+            part_bytes = await self._run(_get_part_data, token, object_id, part)
+            for offset in range(0, len(part_bytes), chunk_size):
+                yield part_bytes[offset : offset + chunk_size]
+
+    async def stream_file_range(self, object_id: str, start: int, end: int) -> AsyncIterator[bytes]:
+        token, _chat_id = get_telegram_credentials(self.db)
+        record = self.db.query(TelegramStoredObject).filter(TelegramStoredObject.object_id == object_id).first()
+        if not record:
+            raise FileNotFoundError()
+        total_size = int(record.size_bytes)
+        if start < 0:
+            start = 0
+        if end >= total_size:
+            end = total_size - 1
+        if start > end:
+            return
+
+        parts = sorted(_load_parts(record), key=lambda item: int(item.get("index", 0)))
+        current_offset = 0
+        chunk_slice_size = 1024 * 1024
+
+        for part in parts:
+            part_size = int(part.get("size", 0))
+            part_start = current_offset
+            part_end = current_offset + part_size - 1
+            current_offset += part_size
+
+            # Check if this part overlaps with [start, end]
+            if part_end < start:
+                continue
+            if part_start > end:
+                break
+
+            part_bytes = await self._run(_get_part_data, token, object_id, part)
+            # Calculate slice bounds within this part
+            slice_start = max(0, start - part_start)
+            slice_end = min(len(part_bytes), end - part_start + 1)
+            sliced = part_bytes[slice_start:slice_end]
+
+            for offset in range(0, len(sliced), chunk_slice_size):
+                yield sliced[offset : offset + chunk_slice_size]
+
 
     def _delete_sync(self, object_id: str) -> bool:
         record = self.db.query(TelegramStoredObject).filter(TelegramStoredObject.object_id == object_id).first()
@@ -200,6 +285,18 @@ class TelegramStorageProvider(StorageProvider):
                     telegram_api(token, "deleteMessage", {"chat_id": chat_id, "message_id": message_id})
                 except TelegramAPIError:
                     pass
+        # Clean up cached chunk files
+        try:
+            cache_dir = _get_cache_dir()
+            for fname in os.listdir(cache_dir):
+                if fname.startswith(f"{object_id}_"):
+                    try:
+                        os.remove(os.path.join(cache_dir, fname))
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+
         self.db.delete(record)
         self.db.commit()
         return True

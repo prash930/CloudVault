@@ -40,11 +40,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.cloudbox.app.BuildConfig
 import com.cloudbox.app.ui.components.BackRow
 import com.cloudbox.app.ui.components.CloudboxScreen
-import com.cloudbox.app.ui.components.CloudLogo
 import com.cloudbox.app.ui.components.PillButton
 import com.cloudbox.app.ui.screens.home.HomeViewModel
 import com.cloudbox.app.ui.theme.CloudBlue
@@ -52,7 +51,6 @@ import com.cloudbox.app.ui.theme.CloudBorder
 import com.cloudbox.app.ui.theme.CloudCard
 import com.cloudbox.app.ui.theme.CloudMuted
 import com.cloudbox.app.ui.theme.CloudNavy
-import com.cloudbox.app.ui.theme.CloudSoft
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
@@ -62,20 +60,18 @@ fun ProfilePhotosScreen(
     viewModel: HomeViewModel = viewModel()
 ) {
     val context = LocalContext.current
-    var pickingSlot by remember { mutableIntStateOf(0) }
-    var uploadingSlot by remember { mutableIntStateOf(0) }
+    var uploading by remember { mutableIntStateOf(0) }
     val uiState by viewModel.uiState.collectAsState()
     val hasAvatar1 = uiState.hasAvatar1
-    val hasAvatar2 = uiState.hasAvatar2
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let {
-            uploadingSlot = pickingSlot
-            viewModel.uploadAvatar(context.contentResolver, it, pickingSlot)
+            uploading = 1
+            viewModel.uploadAvatar(context.contentResolver, it, 1)
         }
     }
 
-    fun avatarUrl(slot: Int) = BuildConfig.BASE_URL + "auth/avatar/$slot"
+    val avatarUrl = BuildConfig.BASE_URL + "auth/avatar/1"
 
     CloudboxScreen {
         Column(
@@ -86,7 +82,7 @@ fun ProfilePhotosScreen(
             LaunchedEffect(Unit) {
                 viewModel.refreshMe()
             }
-            BackRow("Add Profile Photos", onBack)
+            BackRow("Add Profile Photo", onBack)
             Spacer(Modifier.height(12.dp))
             Text(
                 text = "Make it personal.",
@@ -95,35 +91,20 @@ fun ProfilePhotosScreen(
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "Add a photo to your account. You can add up to two.",
+                text = "Add a profile photo to your account.",
                 color = CloudMuted,
                 fontSize = 14.sp
             )
             Spacer(Modifier.height(28.dp))
 
-            Row(Modifier.fillMaxWidth()) {
+            Box(Modifier.fillMaxWidth()) {
                 AvatarPicker(
-                    label = "Photo 1",
+                    label = "Profile Photo",
                     hasAvatar = hasAvatar1,
-                    isUploading = uploadingSlot == 1,
-                    url = avatarUrl(1),
-                    onClick = {
-                        pickingSlot = 1
-                        picker.launch("image/*")
-                    },
-                    modifier = Modifier.weight(1f)
-                )
-                Spacer(Modifier.width(24.dp))
-                AvatarPicker(
-                    label = "Photo 2",
-                    hasAvatar = hasAvatar2,
-                    isUploading = uploadingSlot == 2,
-                    url = avatarUrl(2),
-                    onClick = {
-                        pickingSlot = 2
-                        picker.launch("image/*")
-                    },
-                    modifier = Modifier.weight(1f)
+                    isUploading = uploading == 1,
+                    url = avatarUrl,
+                    onClick = { picker.launch("image/*") },
+                    modifier = Modifier.align(Alignment.Center)
                 )
             }
 
@@ -142,7 +123,7 @@ fun ProfilePhotosScreen(
             PillButton(
                 text = "Continue",
                 onClick = onDone,
-                enabled = hasAvatar1 || hasAvatar2
+                enabled = hasAvatar1
             )
             Spacer(Modifier.height(8.dp))
             TextButton(onClick = onDone, modifier = Modifier.fillMaxWidth()) {

@@ -51,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil3.compose.SubcomposeAsyncImage
 import com.cloudbox.app.data.api.models.CloudFile
 import com.cloudbox.app.ui.theme.CloudBackground
 import com.cloudbox.app.ui.theme.CloudBlue
@@ -227,14 +228,47 @@ fun CloudBottomBar(selected: MainTab, onSelect: (MainTab) -> Unit) {
 @Composable
 fun FileGlyph(file: CloudFile, modifier: Modifier = Modifier) {
     val (icon, tint, bg) = fileVisual(file)
-    Box(
-        modifier = modifier
-            .size(44.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(bg),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+    val isImage = !file.is_folder && file.mime_type?.startsWith("image/") == true
+
+    if (isImage) {
+        Box(
+            modifier = modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(bg),
+            contentAlignment = Alignment.Center
+        ) {
+            SubcomposeAsyncImage(
+                model = com.cloudbox.app.BuildConfig.BASE_URL + "files/${file.id}/download",
+                contentDescription = file.filename,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp)),
+                loading = {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(
+                            color = tint,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                },
+                error = {
+                    Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+                }
+            )
+        }
+    } else {
+        Box(
+            modifier = modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(bg),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+        }
     }
 }
 

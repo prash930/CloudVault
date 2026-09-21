@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiRequest, getToken } from "../api/client";
+import { apiRequest, getToken, API_BASE_URL } from "../api/client";
 import type { UsersFilesOverview, UserWithFiles } from "../types";
 import StatusBadge from "../components/StatusBadge";
 import { formatBytes, formatDate } from "../utils/format";
@@ -40,7 +40,7 @@ export default function Documents() {
 
   async function downloadFile(file: { id: number; filename: string }) {
     try {
-      const response = await fetch(`/admin/files/${file.id}/download`, {
+      const response = await fetch(`${API_BASE_URL}/admin/files/${file.id}/download`, {
         headers: { Authorization: `Bearer ${getToken()}` },
       });
       if (!response.ok) throw new Error("Download failed");
@@ -50,8 +50,19 @@ export default function Documents() {
       anchor.href = url;
       anchor.download = file.filename;
       anchor.click();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
       setMessage(`Downloaded ${file.filename}`);
+    } catch (err) {
+      setError(String((err as Error).message || err));
+    }
+  }
+
+  async function trashFile(file: { id: number; filename: string }) {
+    try {
+      await apiRequest(`/admin/files/${file.id}/trash`, { method: "POST" });
+      setMessage(`Moved ${file.filename} to trash`);
+      const refreshed = await apiRequest<UsersFilesOverview>("/admin/users/files-overview");
+      setData(refreshed);
     } catch (err) {
       setError(String((err as Error).message || err));
     }
@@ -155,6 +166,14 @@ export default function Documents() {
                                     onClick={() => downloadFile(file)}
                                   >
                                     Download
+                                  </button>
+                                  <button
+                                    className="btn btn-danger-outline"
+                                    type="button"
+                                    onClick={() => trashFile(file)}
+                                    style={{ marginLeft: 6 }}
+                                  >
+                                    Trash
                                   </button>
                                 </td>
                               </tr>

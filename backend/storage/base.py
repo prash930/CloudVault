@@ -26,6 +26,22 @@ class StorageProvider(ABC):
     async def stream_file(self, object_id: str) -> AsyncIterator[bytes]:
         """Yield file data by object ID without loading the entire file into memory."""
         pass
+
+    async def stream_file_range(self, object_id: str, start: int, end: int) -> AsyncIterator[bytes]:
+        """Yield file data for the byte range [start, end] inclusive."""
+        total = await self.get_file_size(object_id)
+        if start < 0:
+            start = 0
+        if end >= total:
+            end = total - 1
+        if start > end:
+            return
+        data = await self.retrieve_file(object_id)
+        chunk_size = 1024 * 1024
+        sliced = data[start : end + 1]
+        for offset in range(0, len(sliced), chunk_size):
+            yield sliced[offset : offset + chunk_size]
+
     
     @abstractmethod
     async def delete_file(self, object_id: str) -> bool:
