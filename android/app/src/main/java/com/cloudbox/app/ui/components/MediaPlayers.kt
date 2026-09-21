@@ -61,16 +61,11 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.cache.CacheDataSource
-import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import coil3.compose.SubcomposeAsyncImage
 import coil3.compose.SubcomposeAsyncImageContent
-import com.cloudbox.app.CloudBoxApplication
-import com.cloudbox.app.data.api.ApiClient
 import com.cloudbox.app.ui.theme.CloudBlue
 import com.cloudbox.app.ui.theme.CloudCard
 import com.cloudbox.app.ui.theme.CloudNavy
@@ -78,7 +73,7 @@ import com.cloudbox.app.ui.theme.CloudSoft
 
 @Composable
 fun FullscreenImageViewer(
-    imageUrl: String,
+    imageFile: java.io.File,
     title: String,
     onDismiss: () -> Unit
 ) {
@@ -127,7 +122,7 @@ fun FullscreenImageViewer(
                 contentAlignment = Alignment.Center
             ) {
                 SubcomposeAsyncImage(
-                    model = imageUrl,
+                    model = imageFile,
                     contentDescription = title,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
@@ -196,8 +191,7 @@ fun FullscreenImageViewer(
 }
 
 @OptIn(UnstableApi::class)
-private fun buildExoPlayer(context: Context, videoUrl: String): ExoPlayer {
-    // 1. Fast startup buffer control
+private fun buildExoPlayer(context: Context, videoUri: Uri): ExoPlayer {
     val loadControl = DefaultLoadControl.Builder()
         .setBufferDurationsMs(
             1500,  // minBufferMs
@@ -208,29 +202,11 @@ private fun buildExoPlayer(context: Context, videoUrl: String): ExoPlayer {
         .setPrioritizeTimeOverSizeThresholds(true)
         .build()
 
-    // 2. OkHttp data source with token auth & connection pool
-    val okhttpFactory = OkHttpDataSource.Factory(ApiClient.okHttpClient)
-
-    // 3. Cache data source for instant seek & re-play
-    val cacheFactory = try {
-        val videoCache = CloudBoxApplication.getVideoCache(context)
-        CacheDataSource.Factory()
-            .setCache(videoCache)
-            .setUpstreamDataSourceFactory(okhttpFactory)
-            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-    } catch (_: Exception) {
-        okhttpFactory
-    }
-
-    val mediaSourceFactory = DefaultMediaSourceFactory(context)
-        .setDataSourceFactory(cacheFactory)
-
     return ExoPlayer.Builder(context)
         .setLoadControl(loadControl)
-        .setMediaSourceFactory(mediaSourceFactory)
         .build()
         .apply {
-            setMediaItem(MediaItem.fromUri(Uri.parse(videoUrl)))
+            setMediaItem(MediaItem.fromUri(videoUri))
             prepare()
             playWhenReady = true
         }
@@ -239,7 +215,7 @@ private fun buildExoPlayer(context: Context, videoUrl: String): ExoPlayer {
 @OptIn(UnstableApi::class)
 @Composable
 fun VideoPlayerModal(
-    videoUrl: String,
+    videoUri: Uri,
     title: String,
     onDismiss: () -> Unit
 ) {
@@ -248,8 +224,8 @@ fun VideoPlayerModal(
     var isBuffering by remember { mutableStateOf(true) }
     var playbackError by remember { mutableStateOf<String?>(null) }
 
-    val player = remember(videoUrl) {
-        buildExoPlayer(context, videoUrl)
+    val player = remember(videoUri) {
+        buildExoPlayer(context, videoUri)
     }
 
     DisposableEffect(player) {

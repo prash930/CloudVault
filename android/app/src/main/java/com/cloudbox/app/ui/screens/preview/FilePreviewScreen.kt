@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,7 +47,6 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import coil3.compose.SubcomposeAsyncImage
 import coil3.compose.SubcomposeAsyncImageContent
-import com.cloudbox.app.BuildConfig
 import com.cloudbox.app.data.api.models.CloudFile
 import com.cloudbox.app.data.util.DownloadHelper
 import com.cloudbox.app.ui.components.ActionTile
@@ -76,12 +76,23 @@ fun FilePreviewScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val file = viewModel.fileById(fileId)
+    val cacheDir = remember(fileId) { File(context.cacheDir, "preview_cache").apply { mkdirs() } }
+    var previewFile by remember { mutableStateOf<File?>(null) }
+    var previewError by remember { mutableStateOf<String?>(null) }
+    var retryCount by remember { mutableStateOf(0) }
     var isOpening by remember { mutableStateOf(false) }
     var showImageFull by remember { mutableStateOf(false) }
     var showVideoPlayer by remember { mutableStateOf(false) }
 
-    val mediaUrl = remember(fileId) {
-        BuildConfig.BASE_URL + "files/$fileId/download"
+    LaunchedEffect(fileId, retryCount) {
+        val f = file ?: return@LaunchedEffect
+        previewFile = null
+        previewError = null
+        viewModel.preparePreview(
+            f, cacheDir,
+            onReady = { previewFile = it },
+            onError = { previewError = it }
+        )
     }
 
     fun launchIntent(savedFile: File) {
@@ -151,26 +162,90 @@ fun FilePreviewScreen(
                 contentAlignment = Alignment.Center
             ) {
                 if (isImage) {
-                    SubcomposeAsyncImage(
-                        model = mediaUrl,
-                        contentDescription = file.filename,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(20.dp))
-                            .clickable { showImageFull = true },
-                        loading = {
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                androidx.compose.material3.CircularProgressIndicator(color = CloudBlue, strokeWidth = 3.dp)
+                    val img = previewFile
+                    val err = previewError
+                    if (img != null) {
+                        SubcomposeAsyncImage(
+                            model = img,
+                            contentDescription = file.filename,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(20.dp))
+                                .clickable { showImageFull = true },
+                            loading = {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    androidx.compose.material3.CircularProgressIndicator(color = CloudBlue, strokeWidth = 3.dp)
+                                }
+                            },
+                            error = {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(48.dp))
+                                }
+                            },
+                            success = {
+                                SubcomposeAsyncImageContent()
                             }
-                        },
-                        error = {
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        )
+                    } else if (err != null) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(48.dp))
+                                Spacer(Modifier.height(8.dp))
+                                Text(err, color = CloudMuted, fontSize = 13.sp, maxLines = 2)
+                                Spacer(Modifier.height(8.dp))
+                                androidx.compose.material3.TextButton(onClick = { retryCount++ }) {
+                                    Text("Retry", color = CloudBlue)
+                                }
                             }
-                        },
-                        success = {
-                            SubcomposeAsyncImageContent()
                         }
+                    } else {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            androidx.compose.material3.CircularProgressIndicator(color = CloudBlue, strokeWidth = 3.dp)
+                        }
+                    }
+                } else if (isVideo) {
+                    Box(
+                        modifier = Modifier.size(96.dp).clip(RoundedCornerShape(24.dp)).background(bg),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(48.dp))
+                    }
+                    val videoReady = previewFile != null
+                    val err = previewError
+                    if (err != null) {
+                        Column(
+                            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(err, color = CloudMuted, fontSize = 13.sp, maxLines = 2)
+                            androidx.compose.material3.TextButton(onClick = { retryCount++ }) {
+                                Text("Retry", color = CloudBlue)
+                            }
+                        }
+                    } else if (!videoReady) {
+                        Box(
+                            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                color = CloudBlue,
+                                strokeWidth = 3.dp,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    }
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = "Play",
+                        tint = Color.White,
+                        modifier = Modifier
+                            .size(72.dp)
+                            .clip(CircleShape)
+                            .background(Color(0x88000000))
+                            .clickable(enabled = videoReady) {
+                                if (previewFile != null) showVideoPlayer = true
+                            }
+                            .padding(10.dp)
                     )
                 } else {
                     Box(
@@ -179,26 +254,12 @@ fun FilePreviewScreen(
                     ) {
                         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(48.dp))
                     }
-                    if (isVideo) {
-                        Icon(
-                            Icons.Default.PlayArrow,
-                            contentDescription = "Play",
-                            tint = Color.White,
-                            modifier = Modifier
-                                .size(72.dp)
-                                .clip(CircleShape)
-                                .background(Color(0x88000000))
-                                .clickable { showVideoPlayer = true }
-                                .padding(10.dp)
-                        )
-                    } else {
-                        Text(
-                            "Preview not available",
-                            color = CloudMuted,
-                            fontSize = 14.sp,
-                            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp)
-                        )
-                    }
+                    Text(
+                        "Preview not available",
+                        color = CloudMuted,
+                        fontSize = 14.sp,
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp)
+                    )
                 }
             }
 
@@ -230,7 +291,9 @@ fun FilePreviewScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                 ActionTile(Icons.Default.OpenInNew, "Open", onClick = { openExternally() })
                 if (isVideo) {
-                    ActionTile(Icons.Default.PlayArrow, "Play", onClick = { showVideoPlayer = true })
+                    ActionTile(Icons.Default.PlayArrow, "Play", onClick = {
+                        if (previewFile != null) showVideoPlayer = true
+                    })
                 }
                 if (isImage) {
                     ActionTile(Icons.Default.Fullscreen, "View", onClick = { showImageFull = true })
@@ -259,17 +322,18 @@ fun FilePreviewScreen(
         }
     }
 
-    if (file != null && showImageFull) {
+    val previewLocal = previewFile
+    if (file != null && showImageFull && previewLocal != null) {
         FullscreenImageViewer(
-            imageUrl = mediaUrl,
+            imageFile = previewLocal,
             title = file.filename,
             onDismiss = { showImageFull = false }
         )
     }
 
-    if (file != null && showVideoPlayer) {
+    if (file != null && showVideoPlayer && previewLocal != null) {
         VideoPlayerModal(
-            videoUrl = mediaUrl,
+            videoUri = Uri.fromFile(previewLocal),
             title = file.filename,
             onDismiss = { showVideoPlayer = false }
         )

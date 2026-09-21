@@ -315,6 +315,28 @@ class HomeViewModel : ViewModel() {
         }
     }
 
+    fun preparePreview(file: CloudFile, cacheDir: File, onReady: (File) -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            val existing = File(cacheDir, file.filename)
+            if (existing.exists() && existing.length() > 0 && (file.size_bytes <= 0 || existing.length() == file.size_bytes)) {
+                onReady(existing)
+                return@launch
+            }
+            val result = fileRepository.download(file, cacheDir) { }
+            if (result.isSuccess) {
+                val saved = File(cacheDir, file.filename)
+                if (saved.length() > 0) {
+                    onReady(saved)
+                } else {
+                    saved.delete()
+                    onError("File is empty on server")
+                }
+            } else {
+                onError(result.exceptionOrNull()?.message ?: "Failed to load file")
+            }
+        }
+    }
+
     fun rename(file: CloudFile, filename: String) {
         viewModelScope.launch {
             val result = fileRepository.rename(file.id, filename)
