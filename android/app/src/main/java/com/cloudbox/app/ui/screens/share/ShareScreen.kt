@@ -1,7 +1,6 @@
 package com.cloudbox.app.ui.screens.share
 
 import android.content.Intent
-import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -20,8 +19,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Icon
@@ -40,9 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -52,14 +47,13 @@ import com.cloudbox.app.ui.components.CloudboxScreen
 import com.cloudbox.app.ui.components.FileGlyph
 import com.cloudbox.app.ui.components.FileGlyphFrom
 import com.cloudbox.app.ui.components.PillButton
-import com.cloudbox.app.ui.components.formatDate
 import com.cloudbox.app.ui.screens.home.HomeViewModel
 import com.cloudbox.app.ui.theme.CloudBlue
 import com.cloudbox.app.ui.theme.CloudBorder
 import com.cloudbox.app.ui.theme.CloudCard
 import com.cloudbox.app.ui.theme.CloudMuted
 import com.cloudbox.app.ui.theme.CloudNavy
-import com.cloudbox.app.ui.theme.CloudSoft
+import java.io.File
 
 @Composable
 fun ShareScreen(
@@ -69,29 +63,39 @@ fun ShareScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-    val clipboard = LocalClipboardManager.current
     val file = viewModel.fileById(fileId)
     var email by remember { mutableStateOf("") }
     var sentTo by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.loadShared()
-        viewModel.clearShareLink()
     }
 
-    fun copy(text: String) {
-        clipboard.setText(AnnotatedString(text))
-        Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
-    }
-
-    fun openShareUrl(url: String) {
-        try {
-            context.startActivity(
-                Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
-        } catch (e: Exception) {
-            Toast.makeText(context, "Could not open link", Toast.LENGTH_SHORT).show()
-        }
+    fun openInApp(share: com.cloudbox.app.data.api.models.ShareOut) {
+        val dir = File(context.cacheDir, "shared_cache").apply { mkdirs() }
+        viewModel.downloadSharedFile(share, dir, onReady = { saved ->
+            try {
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    saved
+                )
+                val mimeType = android.webkit.MimeTypeMap.getSingleton()
+                    .getMimeTypeFromExtension(saved.extension.lowercase())
+                    ?: share.mime_type
+                    ?: "*/*"
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, mimeType)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                Toast.makeText(context, "No app found to open this file", Toast.LENGTH_SHORT).show()
+            }
+        }, onError = { msg ->
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+        })
     }
 
     CloudboxScreen {
@@ -158,33 +162,6 @@ fun ShareScreen(
             }
 
             Spacer(Modifier.height(24.dp))
-            Text("Share link", color = CloudNavy, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            PillButton(
-                text = if (uiState.shareLink != null) "Create another link" else "Create link",
-                onClick = { viewModel.createShareLink(fileId) }
-            )
-            uiState.shareLink?.let { link ->
-                Spacer(Modifier.height(8.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(CloudSoft)
-                        .padding(12.dp)
-                        .clickable { copy(link) }
-                ) {
-                    Icon(Icons.Default.Link, contentDescription = null, tint = CloudBlue)
-                    Spacer(Modifier.width(8.dp))
-                    Text(link, color = CloudNavy, fontSize = 13.sp, maxLines = 2, modifier = Modifier.weight(1f))
-                    IconButton(onClick = { copy(link) }) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = CloudBlue)
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(24.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Shared with you", color = CloudNavy, fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 TextButton(onClick = { viewModel.loadShared() }) { Text("Refresh") }
@@ -204,7 +181,7 @@ fun ShareScreen(
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(16.dp))
                                 .background(CloudCard)
-                                .clickable { share.share_url?.let(::openShareUrl) }
+                                .clickable { openInApp(share) }
                                 .padding(12.dp)
                         ) {
                             if (share.filename != null) {
@@ -214,12 +191,12 @@ fun ShareScreen(
                             Column(Modifier.weight(1f)) {
                                 Text(share.filename ?: "Shared file", color = CloudNavy, fontWeight = FontWeight.SemiBold, maxLines = 1)
                                 Text(
-                                    if (share.is_link) "Link \u2022 ${formatDate(share.created_at)}" else (share.shared_with_email ?: "Shared with you"),
+                                    share.shared_with_email ?: "Shared with you",
                                     color = CloudMuted,
                                     fontSize = 12.sp
                                 )
                             }
-                            IconButton(onClick = { share.share_url?.let(::openShareUrl) }) {
+                            IconButton(onClick = { openInApp(share) }) {
                                 Icon(Icons.Default.OpenInNew, contentDescription = "Open", tint = CloudBlue)
                             }
                         }

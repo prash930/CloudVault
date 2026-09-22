@@ -15,6 +15,7 @@ object TokenManager {
     private const val KEY_HAS_AVATAR_1 = "has_avatar_1"
     private const val KEY_HAS_AVATAR_2 = "has_avatar_2"
     private const val KEY_ONBOARDING = "onboarding_seen"
+    private const val KEY_BACKED_UP_MEDIA = "backed_up_media_uris"
     
     private var prefs: SharedPreferences? = null
     
@@ -79,5 +80,20 @@ object TokenManager {
 
     fun setAutoBackupEnabled(enabled: Boolean) {
         prefs?.edit()?.putBoolean(KEY_AUTO_BACKUP, enabled)?.apply()
+    }
+
+    fun clearBackedUpMedia() {
+        prefs?.edit()?.putStringSet(KEY_BACKED_UP_MEDIA, emptySet())?.apply()
+    }
+
+    fun getBackedUpMediaUris(): Set<String> {
+        return prefs?.getStringSet(KEY_BACKED_UP_MEDIA, emptySet()) ?: emptySet()
+    }
+
+    fun addBackedUpMediaUris(uris: Collection<String>) {
+        if (uris.isEmpty()) return
+        val current = getBackedUpMediaUris().toMutableSet()
+        current.addAll(uris)
+        prefs?.edit()?.putStringSet(KEY_BACKED_UP_MEDIA, current)?.apply()
     }
 }

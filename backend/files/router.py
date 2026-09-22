@@ -73,15 +73,6 @@ def share_file_with_email(
     return share_service.share_with_email(db, current_user, file_id, req.email)
 
 
-@router.post("/{file_id}/share-link", response_model=schemas.ShareOut)
-def create_file_share_link(
-    file_id: int,
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db),
-):
-    return share_service.create_share_link(db, current_user, file_id)
-
-
 @router.post("/folders", response_model=schemas.FileOut)
 def create_folder_endpoint(
     req: schemas.CreateFolderRequest,

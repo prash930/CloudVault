@@ -21,7 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.OpenInNew
@@ -75,7 +75,8 @@ fun FilePreviewScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-    val file = viewModel.fileById(fileId)
+    var file by remember { mutableStateOf(viewModel.fileById(fileId)) }
+    var fetchFailed by remember { mutableStateOf(false) }
     val cacheDir = remember(fileId) { File(context.cacheDir, "preview_cache").apply { mkdirs() } }
     var previewFile by remember { mutableStateOf<File?>(null) }
     var previewError by remember { mutableStateOf<String?>(null) }
@@ -83,8 +84,17 @@ fun FilePreviewScreen(
     var isOpening by remember { mutableStateOf(false) }
     var showImageFull by remember { mutableStateOf(false) }
     var showVideoPlayer by remember { mutableStateOf(false) }
+    var showRenameDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(fileId, retryCount) {
+    LaunchedEffect(fileId) {
+        if (file == null) {
+            viewModel.fetchFile(fileId) { fetched ->
+                if (fetched != null) file = fetched else fetchFailed = true
+            }
+        }
+    }
+
+    LaunchedEffect(file?.id, retryCount) {
         val f = file ?: return@LaunchedEffect
         previewFile = null
         previewError = null
@@ -114,43 +124,57 @@ fun FilePreviewScreen(
     }
 
     fun openExternally() {
-        if (file == null) return
+        val f = file ?: return
         val cacheDir = File(context.cacheDir, "opened").apply { mkdirs() }
-        val cachedFile = File(cacheDir, file.filename)
-        if (cachedFile.exists() && cachedFile.length() > 0 && (file.size_bytes <= 0 || cachedFile.length() == file.size_bytes)) {
+        val cachedFile = File(cacheDir, f.filename)
+        if (cachedFile.exists() && cachedFile.length() > 0 && (f.size_bytes <= 0 || cachedFile.length() == f.size_bytes)) {
             launchIntent(cachedFile)
             return
         }
         isOpening = true
-        Toast.makeText(context, "Opening ${file.filename}...", Toast.LENGTH_SHORT).show()
-        viewModel.openFile(file, cacheDir) { savedFile ->
+        Toast.makeText(context, "Opening ${f.filename}...", Toast.LENGTH_SHORT).show()
+        viewModel.openFile(f, cacheDir) { savedFile ->
             isOpening = false
             launchIntent(savedFile)
         }
     }
 
     CloudboxScreen {
-        if (file == null) {
+        val f = file ?: run {
             Column(
                 modifier = Modifier.fillMaxSize().padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Text("File not found", color = CloudMuted, fontSize = 16.sp)
+                Text(if (fetchFailed) "File not found" else "Loading file...", color = CloudMuted, fontSize = 16.sp)
+                if (fetchFailed) {
+                    Spacer(Modifier.height(12.dp))
+                    androidx.compose.material3.TextButton(onClick = {
+                        fetchFailed = false
+                        viewModel.fetchFile(fileId) { fetched ->
+                            if (fetched != null) file = fetched else fetchFailed = true
+                        }
+                    }) {
+                        Text("Retry", color = CloudBlue)
+                    }
+                } else {
+                    Spacer(Modifier.height(12.dp))
+                    androidx.compose.material3.CircularProgressIndicator(color = CloudBlue, strokeWidth = 3.dp)
+                }
             }
             return@CloudboxScreen
         }
 
-        val isImage = file.mime_type?.startsWith("image/") == true
-        val isVideo = file.mime_type?.startsWith("video/") == true
-        val (icon, tint, bg) = fileVisual(file)
+        val isImage = f.mime_type?.startsWith("image/") == true
+        val isVideo = f.mime_type?.startsWith("video/") == true
+        val (icon, tint, bg) = fileVisual(f)
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
-            BackRow(file.filename, onBack)
+            BackRow(f.filename, onBack)
             Spacer(Modifier.height(16.dp))
 
             Box(
@@ -167,7 +191,7 @@ fun FilePreviewScreen(
                     if (img != null) {
                         SubcomposeAsyncImage(
                             model = img,
-                            contentDescription = file.filename,
+                            contentDescription = f.filename,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .clip(RoundedCornerShape(20.dp))
@@ -264,9 +288,9 @@ fun FilePreviewScreen(
             }
 
             Spacer(Modifier.height(16.dp))
-            Text(file.filename, color = CloudNavy, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 2)
+            Text(f.filename, color = CloudNavy, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 2)
             Text(
-                "${if (file.is_folder) "Folder" else formatBytes(file.size_bytes)}  \u2022  ${file.mime_type ?: "file"}",
+                "${if (f.is_folder) "Folder" else formatBytes(f.size_bytes)}  \u2022  ${f.mime_type ?: "file"}",
                 color = CloudMuted,
                 fontSize = 13.sp
             )
@@ -280,10 +304,10 @@ fun FilePreviewScreen(
                     .padding(16.dp)
             ) {
                 Column {
-                    DetailRow("Type", if (file.is_folder) "Folder" else file.mime_type ?: "Unknown")
-                    DetailRow("Size", if (file.is_folder) "—" else formatBytes(file.size_bytes))
-                    DetailRow("Created", formatDate(file.created_at))
-                    DetailRow("Modified", formatDateTime(file.updated_at))
+                    DetailRow("Type", if (f.is_folder) "Folder" else f.mime_type ?: "Unknown")
+                    DetailRow("Size", if (f.is_folder) "—" else formatBytes(f.size_bytes))
+                    DetailRow("Created", formatDate(f.created_at))
+                    DetailRow("Modified", formatDateTime(f.updated_at))
                 }
             }
 
@@ -300,8 +324,8 @@ fun FilePreviewScreen(
                 }
                 ActionTile(Icons.Default.Download, "Download", onClick = {
                     val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
-                    viewModel.download(file, dir) { saved ->
-                        val uri = DownloadHelper.publishToDownloads(context, saved, file.mime_type)
+                    viewModel.download(f, dir) { saved ->
+                        val uri = DownloadHelper.publishToDownloads(context, saved, f.mime_type)
                         Toast.makeText(
                             context,
                             if (uri != null) "Saved to Downloads/Cloudbox/${saved.name}" else "Saved to app storage (${saved.absolutePath})",
@@ -309,32 +333,56 @@ fun FilePreviewScreen(
                         ).show()
                     }
                 })
-                if (!file.is_folder) {
-                    ActionTile(Icons.Default.Share, "Share", onClick = { onShare(file.id) })
+                if (!f.is_folder) {
+                    ActionTile(Icons.Default.Share, "Share", onClick = { onShare(f.id) })
                 }
-                if (file.is_folder || !file.is_trashed) {
-                    ActionTile(Icons.Default.Delete, "Trash", onClick = {
-                        viewModel.moveToTrash(file)
-                        onBack()
-                    })
-                }
+                ActionTile(Icons.Default.Description, "Rename", onClick = { showRenameDialog = true })
+            }
+
+            if (showRenameDialog) {
+                var name by remember { mutableStateOf(f.filename) }
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { showRenameDialog = false },
+                    title = { Text("Rename") },
+                    text = {
+                        androidx.compose.material3.OutlinedTextField(
+                            value = name,
+                            onValueChange = { name = it },
+                            singleLine = true
+                        )
+                    },
+                    confirmButton = {
+                        androidx.compose.material3.TextButton(onClick = {
+                            val newName = name.trim()
+                            if (newName.isNotBlank() && newName != f.filename) {
+                                viewModel.rename(f, newName)
+                                file = f.copy(filename = newName)
+                            }
+                            showRenameDialog = false
+                        }) { Text("Save") }
+                    },
+                    dismissButton = {
+                        androidx.compose.material3.TextButton(onClick = { showRenameDialog = false }) { Text("Cancel") }
+                    }
+                )
             }
         }
     }
 
     val previewLocal = previewFile
-    if (file != null && showImageFull && previewLocal != null) {
+    val previewF = file
+    if (previewF != null && showImageFull && previewLocal != null) {
         FullscreenImageViewer(
             imageFile = previewLocal,
-            title = file.filename,
+            title = previewF.filename,
             onDismiss = { showImageFull = false }
         )
     }
 
-    if (file != null && showVideoPlayer && previewLocal != null) {
+    if (previewF != null && showVideoPlayer && previewLocal != null) {
         VideoPlayerModal(
             videoUri = Uri.fromFile(previewLocal),
-            title = file.filename,
+            title = previewF.filename,
             onDismiss = { showVideoPlayer = false }
         )
     }

@@ -123,6 +123,14 @@ class FileRepository {
         }
     }
 
+    suspend fun getFile(fileId: Int): Result<CloudFile> {
+        return try {
+            handleResponse(api.getFile(fileId))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun download(file: CloudFile, targetDir: File, onProgress: (Float) -> Unit): Result<File> {
         return try {
             val response = api.download(file.id)
@@ -153,9 +161,18 @@ class FileRepository {
         }
     }
 
-    suspend fun createShareLink(fileId: Int): Result<ShareOut> {
+    suspend fun downloadShared(share: ShareOut, target: File): Result<File> {
         return try {
-            handleResponse(api.createShareLink(fileId))
+            val response = api.downloadShared(share.token)
+            if (!response.isSuccessful || response.body() == null) {
+                return Result.failure(Exception("Download failed"))
+            }
+            writeResponseBody(response.body()!!, target) { }
+            if (target.length() == 0L) {
+                target.delete()
+                return Result.failure(Exception("File is empty on server"))
+            }
+            Result.success(target)
         } catch (e: Exception) {
             Result.failure(e)
         }

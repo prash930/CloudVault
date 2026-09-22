@@ -56,6 +56,9 @@ interface FilesApi {
         @Query("parent_folder_id") parentFolderId: Int? = null
     ): Response<CloudFile>
 
+    @GET("/files/{file_id}")
+    suspend fun getFile(@Path("file_id") fileId: Int): Response<CloudFile>
+
     @Streaming
     @GET("/files/{file_id}/download")
     suspend fun download(@Path("file_id") fileId: Int): Response<ResponseBody>
@@ -78,9 +81,10 @@ interface FilesApi {
     @POST("/files/{file_id}/share")
     suspend fun shareWithEmail(@Path("file_id") fileId: Int, @Body request: ShareEmailRequest): Response<ShareOut>
 
-    @POST("/files/{file_id}/share-link")
-    suspend fun createShareLink(@Path("file_id") fileId: Int): Response<ShareOut>
-
     @GET("/files/shared")
     suspend fun sharedWithMe(): Response<ShareListResponse>
+
+    @Streaming
+    @GET("/s/{share_token}/download")
+    suspend fun downloadShared(@Path("share_token") shareToken: String): Response<ResponseBody>
 }

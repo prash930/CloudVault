@@ -62,35 +62,6 @@ def share_with_email(db: Session, user: User, file_id: int, email: str) -> dict:
     return serialize_share(share, record)
 
 
-def create_share_link(db: Session, user: User, file_id: int) -> dict:
-    record = get_owned_record(db, user.id, file_id)
-    if record.is_folder:
-        raise HTTPException(status_code=400, detail="Folders cannot be shared yet")
-    existing = (
-        db.query(FileShare)
-        .filter(
-            FileShare.file_id == file_id,
-            FileShare.owner_id == user.id,
-            FileShare.is_link.is_(True),
-        )
-        .first()
-    )
-    if existing:
-        return serialize_share(existing, record)
-    share = FileShare(
-        file_id=file_id,
-        owner_id=user.id,
-        token=secrets.token_urlsafe(12),
-        shared_with_email=None,
-        is_link=True,
-        created_at=datetime.now(timezone.utc),
-    )
-    db.add(share)
-    db.commit()
-    db.refresh(share)
-    return serialize_share(share, record)
-
-
 def list_shared_with_me(db: Session, user: User) -> dict:
     shares = (
         db.query(FileShare)
