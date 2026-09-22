@@ -1,15 +1,49 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
 from backend.config import settings
+
+import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 # For SQLite, need check_same_thread=False
 connect_args = {}
 if settings.DATABASE_URL.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
+else:
+    connect_args = {"connect_timeout": 10}
 
-engine = create_engine(settings.DATABASE_URL, connect_args=connect_args)
+engine = create_engine(
+    settings.DATABASE_URL,
+    connect_args=connect_args,
+    pool_pre_ping=True,
+    pool_recycle=1800,
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+def connect_with_retry(retries: int = 5, delay: float = 3.0):
+    """Attempt to connect to the database, retrying on transient failures
+    (e.g. temporary DNS resolution or network hiccups on the hosting platform)."""
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            return
+        except Exception as e:
+            if attempt >= retries:
+                raise
+            logger.warning(
+                "Database connection attempt %s/%s failed (%s). Retrying in %ss...",
+                attempt,
+                retries,
+                e,
+                delay,
+            )
+            time.sleep(delay)
 
 def get_db():
     db = SessionLocal()
@@ -24,6 +58,7 @@ def create_all_tables():
     from backend.files import models as file_models
     from backend.settings import models as settings_models
     from backend.storage import models as storage_models
+    connect_with_retry()
     Base.metadata.create_all(bind=engine)
     _apply_sqlite_migrations()
 
