@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import java.io.File
 
 object TokenManager {
     private const val PREF_NAME = "cloudbox_secure_prefs"
@@ -14,6 +15,7 @@ object TokenManager {
     private const val KEY_AUTO_BACKUP = "auto_backup_enabled"
     private const val KEY_HAS_AVATAR_1 = "has_avatar_1"
     private const val KEY_HAS_AVATAR_2 = "has_avatar_2"
+    private const val KEY_LOCAL_AVATAR_1 = "local_avatar_1_path"
     private const val KEY_ONBOARDING = "onboarding_seen"
     private const val KEY_BACKED_UP_MEDIA = "backed_up_media_uris"
     
@@ -59,6 +61,14 @@ object TokenManager {
 
     fun hasAvatar1(): Boolean = prefs?.getBoolean(KEY_HAS_AVATAR_1, false) ?: false
     fun hasAvatar2(): Boolean = prefs?.getBoolean(KEY_HAS_AVATAR_2, false) ?: false
+
+    fun saveLocalAvatarPath(path: String) {
+        prefs?.edit()?.putString(KEY_LOCAL_AVATAR_1, path)?.apply()
+    }
+
+    fun getLocalAvatarPath(): String? {
+        return prefs?.getString(KEY_LOCAL_AVATAR_1, null)
+    }
 
     fun markOnboardingSeen() {
         prefs?.edit()?.putBoolean(KEY_ONBOARDING, true)?.apply()

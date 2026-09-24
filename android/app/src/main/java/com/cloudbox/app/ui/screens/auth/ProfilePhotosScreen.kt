@@ -40,8 +40,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.ContentResolver
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.core.content.FileProvider
+import java.io.File
+import java.io.FileOutputStream
 import coil3.compose.AsyncImage
 import com.cloudbox.app.BuildConfig
+import com.cloudbox.app.data.local.TokenManager
 import com.cloudbox.app.ui.components.BackRow
 import com.cloudbox.app.ui.components.CloudboxScreen
 import com.cloudbox.app.ui.components.PillButton
@@ -67,6 +75,13 @@ fun ProfilePhotosScreen(
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let {
             uploading = 1
+            // Copy the image to app-private storage and save locally first
+            val localPath = saveLocalAvatar(context, uri)
+            localPath?.let { path ->
+                TokenManager.saveLocalAvatarPath(path)
+                TokenManager.saveAvatarFlags(true, false)
+            }
+            // Also upload to server if internet is available
             viewModel.uploadAvatar(context.contentResolver, it, 1)
         }
     }
@@ -186,5 +201,26 @@ private fun AvatarPicker(
                 modifier = Modifier.size(16.dp)
             )
         }
+    }
+}
+
+private fun saveLocalAvatar(context: Context, uri: Uri): String? {
+    return try {
+        val cacheDir = File(context.cacheDir, "avatars")
+        if (!cacheDir.exists()) cacheDir.mkdirs()
+        val displayName = context.contentResolver?.query(uri, null, null, null, null)?.use { cursor ->
+            val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (index >= 0 && cursor.moveToFirst()) cursor.getString(index)
+            else "avatar_${System.currentTimeMillis()}.jpg"
+        } ?: "avatar_${System.currentTimeMillis()}.jpg"
+        val file = File(cacheDir, displayName)
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            FileOutputStream(file).use { output ->
+                input.copyTo(output)
+            }
+        }
+        file.absolutePath
+    } catch (e: Exception) {
+        null
     }
 }

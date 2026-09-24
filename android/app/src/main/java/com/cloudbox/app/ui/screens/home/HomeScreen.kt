@@ -695,10 +695,9 @@ private fun ProfileView(
     onToggleAutoBackup: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
+    val contentResolver = context.contentResolver
     val focusRequester = remember { FocusRequester() }
-    var name by remember { mutableStateOf(uiState.userName) }
-    var email by remember { mutableStateOf(uiState.userEmail) }
-    var password by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf(TokenManager.getUserName() ?: uiState.userName) }
     var autoBackup by remember { mutableStateOf(TokenManager.isAutoBackupEnabled()) }
 
     Column(
@@ -711,7 +710,14 @@ private fun ProfileView(
             modifier = Modifier.fillMaxWidth(),
             contentAlignment = Alignment.Center
         ) {
-            AvatarCircle(hasAvatar = uiState.hasAvatar1, url = BuildConfig.BASE_URL + "auth/avatar/1", onClick = onEditPhotos)
+            val localAvatarPath = TokenManager.getLocalAvatarPath()
+            val localAvatarUrl = localAvatarPath?.let { Uri.fromFile(File(it)).toString() }
+            val avatarUrl = localAvatarUrl ?: BuildConfig.BASE_URL + "auth/avatar/1"
+            AvatarCircle(
+                hasAvatar = localAvatarPath != null || uiState.hasAvatar1,
+                url = avatarUrl,
+                onClick = onEditPhotos
+            )
         }
         Spacer(Modifier.height(12.dp))
         Row(
@@ -719,12 +725,16 @@ private fun ProfileView(
             horizontalArrangement = Arrangement.Center,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text(uiState.userName, color = CloudNavy, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text(name, color = CloudNavy, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             IconButton(onClick = { focusRequester.requestFocus() }) {
                 Icon(Icons.Default.Edit, contentDescription = "Edit your name", tint = CloudBlue, modifier = Modifier.size(18.dp))
             }
         }
-        Text(uiState.userEmail, color = CloudMuted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+
+        // TEMPORARY DIAGNOSTIC: show API error directly on screen
+        uiState.error?.let { error ->
+            Text("API ERROR: $error", color = Color.Red, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+        }
 
         Spacer(Modifier.height(20.dp))
         StorageIndicator(uiState.usagePercentage, uiState.usedFormatted, uiState.quotaFormatted)
@@ -740,7 +750,10 @@ private fun ProfileView(
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { name = it },
+                    onValueChange = { newName ->
+                        name = newName
+                        TokenManager.saveUserInfo(newName.trim(), TokenManager.getUserEmail() ?: "", TokenManager.getUserRole() ?: "")
+                    },
                     label = { Text("Display name") },
                     singleLine = true,
                     modifier = Modifier
@@ -748,35 +761,16 @@ private fun ProfileView(
                         .focusRequester(focusRequester),
                     shape = RoundedCornerShape(14.dp)
                 )
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = { email = it },
-                    label = { Text("Email") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
-                )
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = { Text("New password (optional)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
-                )
                 Spacer(Modifier.height(14.dp))
                 TextButton(
                     onClick = {
-                        viewModel.updateProfile(name.trim(), email.trim(), password) {
-                            Toast.makeText(context, "Profile updated", Toast.LENGTH_SHORT).show()
-                            password = ""
-                        }
+                        val trimmedName = name.trim()
+                        TokenManager.saveUserInfo(trimmedName, TokenManager.getUserEmail() ?: "", TokenManager.getUserRole() ?: "")
+                        Toast.makeText(context, "Display name saved", Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier.align(Alignment.End)
                 ) {
-                    Text("Save changes", color = CloudBlue, fontWeight = FontWeight.SemiBold)
+                    Text("Save name", color = CloudBlue, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
