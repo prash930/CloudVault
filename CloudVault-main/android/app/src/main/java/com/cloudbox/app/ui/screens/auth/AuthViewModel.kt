@@ -1,8 +1,7 @@
 package com.cloudbox.app.ui.screens.auth
 
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.cloudbox.app.data.api.models.UserResponse
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cloudbox.app.data.local.TokenManager
 import com.cloudbox.app.data.repository.AuthRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,8 +15,7 @@ data class AuthUiState(
     val error: String? = null,
     val loginSuccess: Boolean = false,
     val registerSuccess: Boolean = false,
-    val forgotPasswordSuccess: Boolean = false,
-    val user: UserResponse? = null
+    val forgotPasswordSuccess: Boolean = false
 )
 
 class AuthViewModel : ViewModel() {
@@ -34,7 +32,6 @@ class AuthViewModel : ViewModel() {
                 tokenResponse?.access_token?.let { TokenManager.saveToken(it) }
                 tokenResponse?.user?.let { user ->
                     TokenManager.saveUserInfo(user.email, user.display_name, user.role)
-                    TokenManager.saveAvatarFlags(user.has_avatar_1, user.has_avatar_2)
                 }
                 _uiState.update { it.copy(isLoading = false, loginSuccess = true) }
             } else {
@@ -57,7 +54,6 @@ class AuthViewModel : ViewModel() {
                 tokenResponse?.access_token?.let { TokenManager.saveToken(it) }
                 tokenResponse?.user?.let { user ->
                     TokenManager.saveUserInfo(user.email, user.display_name, user.role)
-                    TokenManager.saveAvatarFlags(user.has_avatar_1, user.has_avatar_2)
                 }
                 _uiState.update { it.copy(isLoading = false, registerSuccess = true, loginSuccess = true) }
             } else {
@@ -90,13 +86,9 @@ class AuthViewModel : ViewModel() {
     fun checkAuthStatus() {
         viewModelScope.launch {
             if (TokenManager.isLoggedIn()) {
-                val result = repository.getMe()
-                if (result.isSuccess) {
-                    _uiState.update { it.copy(user = result.getOrNull()) }
-                } else {
-                    // Token might be invalid
-                    TokenManager.clearAll()
-                }
+                _uiState.update { it.copy(isLoading = false) }
+            } else {
+                TokenManager.clearAll()
             }
         }
     }

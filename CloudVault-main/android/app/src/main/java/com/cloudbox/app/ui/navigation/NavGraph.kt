@@ -8,13 +8,11 @@ import androidx.navigation.compose.rememberNavController
 import com.cloudbox.app.data.local.TokenManager
 import com.cloudbox.app.ui.screens.auth.ForgotPasswordScreen
 import com.cloudbox.app.ui.screens.auth.LoginScreen
-import com.cloudbox.app.ui.screens.auth.ProfilePhotosScreen
 import com.cloudbox.app.ui.screens.auth.RegisterScreen
 import com.cloudbox.app.ui.screens.home.HomeScreen
 import com.cloudbox.app.ui.screens.home.HomeViewModel
 import com.cloudbox.app.ui.screens.home.UploadQueueScreen
 import com.cloudbox.app.ui.screens.preview.FilePreviewScreen
-import com.cloudbox.app.ui.screens.share.ShareScreen
 import com.cloudbox.app.ui.screens.splash.SplashScreen
 
 @Composable
@@ -60,7 +58,7 @@ fun NavGraph() {
             RegisterScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onRegisterSuccess = {
-                    navController.navigate("profile_photos") {
+                    navController.navigate("home") {
                         popUpTo("login") { inclusive = true }
                     }
                 }
@@ -69,12 +67,6 @@ fun NavGraph() {
         composable("forgot_password") {
             ForgotPasswordScreen(
                 onNavigateBack = { navController.popBackStack() }
-            )
-        }
-        composable("profile_photos") {
-            ProfilePhotosScreen(
-                onBack = { navController.popBackStack() },
-                onDone = { navigateHomeClearing() }
             )
         }
         composable("home") {
@@ -86,21 +78,12 @@ fun NavGraph() {
                     }
                 },
                 onOpenUploadQueue = { navController.navigate("upload_queue") },
-                onOpenShare = { fileId -> navController.navigate("share/$fileId") },
                 onOpenPreview = { fileId -> navController.navigate("preview/$fileId") },
-                onOpenProfilePhotos = { navController.navigate("profile_photos") }
+                viewModel = homeViewModel()
             )
         }
         composable("upload_queue") {
             UploadQueueScreen(
-                onBack = { navController.popBackStack() },
-                viewModel = homeViewModel()
-            )
-        }
-        composable("share/{fileId}") { entry ->
-            val fileId = entry.arguments?.getString("fileId")?.toIntOrNull() ?: -1
-            ShareScreen(
-                fileId = fileId,
                 onBack = { navController.popBackStack() },
                 viewModel = homeViewModel()
             )
@@ -110,7 +93,6 @@ fun NavGraph() {
             FilePreviewScreen(
                 fileId = fileId,
                 onBack = { navController.popBackStack() },
-                onShare = { id -> navController.navigate("share/$id") },
                 viewModel = homeViewModel()
             )
         }

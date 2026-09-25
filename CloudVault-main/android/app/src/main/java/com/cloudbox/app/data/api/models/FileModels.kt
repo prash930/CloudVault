@@ -27,24 +27,3 @@ data class CreateFolderRequest(
 data class RenameRequest(val filename: String)
 
 data class MoveRequest(val parent_folder_id: Int?)
-
-data class ShareEmailRequest(val email: String)
-
-data class ShareOut(
-    val id: Int,
-    val file_id: Int,
-    val token: String,
-    val shared_with_email: String?,
-    val is_link: Boolean,
-    val share_url: String,
-    val created_at: String,
-    val filename: String?,
-    val mime_type: String?,
-    val size_bytes: Long?,
-    val is_folder: Boolean?
-)
-
-data class ShareListResponse(
-    val items: List<ShareOut>,
-    val total: Int
-)

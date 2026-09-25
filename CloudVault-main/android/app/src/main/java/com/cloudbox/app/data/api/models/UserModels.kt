@@ -8,15 +8,7 @@ data class UserResponse(
     val status: String,
     val storage_quota_bytes: Long,
     val storage_used_bytes: Long,
-    val created_at: String,
-    val has_avatar_1: Boolean = false,
-    val has_avatar_2: Boolean = false
-)
-
-data class UpdateProfileRequest(
-    val display_name: String? = null,
-    val email: String? = null,
-    val password: String? = null
+    val created_at: String
 )
 
 data class StorageUsageResponse(

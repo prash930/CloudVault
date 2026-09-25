@@ -10,9 +10,6 @@ import com.cloudbox.app.data.api.models.ErrorResponse
 import com.cloudbox.app.data.api.models.FileListResponse
 import com.cloudbox.app.data.api.models.MoveRequest
 import com.cloudbox.app.data.api.models.RenameRequest
-import com.cloudbox.app.data.api.models.ShareEmailRequest
-import com.cloudbox.app.data.api.models.ShareListResponse
-import com.cloudbox.app.data.api.models.ShareOut
 import com.google.gson.Gson
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
@@ -89,9 +86,17 @@ class FileRepository {
 
     suspend fun permanentlyDelete(fileId: Int): Result<String> {
         return try {
-            val result = handleResponse(api.permanentlyDelete(fileId))
-            if (result.isSuccess) Result.success(result.getOrNull()?.message ?: "Deleted")
-            else Result.failure(result.exceptionOrNull() ?: Exception("Unknown error"))
+            val response = api.permanentlyDelete(fileId)
+            if (response.isSuccessful) {
+                Result.success(response.body()?.message ?: "File permanently deleted")
+            } else {
+                val errorMsg = try {
+                    gson.fromJson(response.errorBody()?.string(), ErrorResponse::class.java).detail
+                } catch (e: Exception) {
+                    "Failed to delete file"
+                }
+                Result.failure(Exception(errorMsg))
+            }
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -115,6 +120,14 @@ class FileRepository {
         }
     }
 
+    suspend fun getFile(fileId: Int): Result<CloudFile> {
+        return try {
+            handleResponse(api.getFile(fileId))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun download(file: CloudFile, targetDir: File, onProgress: (Float) -> Unit): Result<File> {
         return try {
             val response = api.download(file.id)
@@ -132,30 +145,6 @@ class FileRepository {
     suspend fun move(fileId: Int, parentFolderId: Int?): Result<CloudFile> {
         return try {
             handleResponse(api.move(fileId, MoveRequest(parentFolderId)))
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    suspend fun shareWithEmail(fileId: Int, email: String): Result<ShareOut> {
-        return try {
-            handleResponse(api.shareWithEmail(fileId, ShareEmailRequest(email)))
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    suspend fun createShareLink(fileId: Int): Result<ShareOut> {
-        return try {
-            handleResponse(api.createShareLink(fileId))
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    suspend fun sharedWithMe(): Result<ShareListResponse> {
-        return try {
-            handleResponse(api.sharedWithMe())
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -184,9 +173,9 @@ class FileRepository {
     private fun writeResponseBody(body: ResponseBody, target: File, onProgress: (Float) -> Unit) {
         val total = body.contentLength()
         var written = 0L
-        body.byteStream().use { input ->
-            FileOutputStream(target).use { output ->
-                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        body.byteStream().buffered(65536).use { input ->
+            FileOutputStream(target).buffered(65536).use { output ->
+                val buffer = ByteArray(65536)
                 while (true) {
                     val read = input.read(buffer)
                     if (read == -1) break
@@ -194,6 +183,7 @@ class FileRepository {
                     written += read
                     if (total > 0) onProgress(written.toFloat() / total.toFloat())
                 }
+                output.flush()
             }
         }
         onProgress(1f)
@@ -223,6 +213,7 @@ private class ProgressUriRequestBody(
                 if (length > 0) onProgress(uploaded.toFloat() / length.toFloat())
             }
         }
+        sink.flush()
         onProgress(1f)
     }
 }

@@ -1,11 +1,12 @@
 package com.cloudbox.app.ui.screens.home
 
 import android.content.ContentResolver
+import android.content.ContentUris
 import android.net.Uri
+import android.provider.MediaStore
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cloudbox.app.data.api.models.CloudFile
-import com.cloudbox.app.data.api.models.ShareOut
 import com.cloudbox.app.data.local.TokenManager
 import com.cloudbox.app.data.repository.AuthRepository
 import com.cloudbox.app.data.repository.FileRepository
@@ -44,7 +45,6 @@ data class HomeUiState(
     val files: List<CloudFile> = emptyList(),
     val recentFiles: List<CloudFile> = emptyList(),
     val trash: List<CloudFile> = emptyList(),
-    val shared: List<ShareOut> = emptyList(),
     val folders: List<CloudFile> = emptyList(),
     val currentFolderId: Int? = null,
     val folderStack: List<CloudFile> = emptyList(),
@@ -55,11 +55,7 @@ data class HomeUiState(
     val transfers: List<TransferItem> = emptyList(),
     val selectedCategory: String? = null,
     val pendingUploads: List<PendingUpload> = emptyList(),
-    val isUploading: Boolean = false,
-    val shareLink: String? = null,
-    val hasAvatar1: Boolean = false,
-    val hasAvatar2: Boolean = false,
-    val profileSaving: Boolean = false
+    val isUploading: Boolean = false
 )
 
 class HomeViewModel : ViewModel() {
@@ -73,9 +69,6 @@ class HomeViewModel : ViewModel() {
         loadStorageUsage()
         loadFiles()
         loadRecent()
-        loadTrash()
-        loadShared()
-        refreshMe()
     }
 
     fun loadUserInfo() {
@@ -84,28 +77,8 @@ class HomeViewModel : ViewModel() {
         _uiState.update {
             it.copy(
                 userName = name,
-                userEmail = email,
-                hasAvatar1 = TokenManager.hasAvatar1(),
-                hasAvatar2 = TokenManager.hasAvatar2()
+                userEmail = email
             )
-        }
-    }
-
-    fun refreshMe() {
-        viewModelScope.launch {
-            val result = authRepository.getMe()
-            result.getOrNull()?.let { user ->
-                TokenManager.saveUserInfo(user.email, user.display_name, user.role)
-                TokenManager.saveAvatarFlags(user.has_avatar_1, user.has_avatar_2)
-                _uiState.update {
-                    it.copy(
-                        userName = user.display_name,
-                        userEmail = user.email,
-                        hasAvatar1 = user.has_avatar_1,
-                        hasAvatar2 = user.has_avatar_2
-                    )
-                }
-            }
         }
     }
 
@@ -162,15 +135,6 @@ class HomeViewModel : ViewModel() {
             val result = fileRepository.trash()
             result.getOrNull()?.let { response ->
                 _uiState.update { it.copy(trash = response.items) }
-            }
-        }
-    }
-
-    fun loadShared() {
-        viewModelScope.launch {
-            val result = fileRepository.sharedWithMe()
-            result.getOrNull()?.let { response ->
-                _uiState.update { it.copy(shared = response.items) }
             }
         }
     }
@@ -285,15 +249,84 @@ class HomeViewModel : ViewModel() {
         uploadPending(contentResolver) {}
     }
 
-    fun download(file: CloudFile, targetDir: File) {
+    fun runAutoBackup(contentResolver: ContentResolver, maxItems: Int = 20) {
+        val enabled = TokenManager.isAutoBackupEnabled()
+        if (!enabled) return
+        val alreadyBackedUp = TokenManager.getBackedUpMediaUris()
+        val uris = queryGalleryMedia(contentResolver, alreadyBackedUp, maxItems)
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isUploading = true, error = null, successMessage = "Auto backup started") }
+            var uploaded = 0
+            uris.forEach { item ->
+                upsertTransfer(TransferItem(item.second, "Backup", 0f, "Running"))
+                val result = fileRepository.upload(contentResolver, item.first, null) { progress ->
+                    upsertTransfer(TransferItem(item.second, "Backup", progress, "Running"))
+                }
+                if (result.isSuccess) {
+                    uploaded += 1
+                    TokenManager.addBackedUpMediaUris(listOf(item.first.toString()))
+                    upsertTransfer(TransferItem(item.second, "Backup", 1f, "Complete"))
+                } else {
+                    upsertTransfer(TransferItem(item.second, "Backup", 0f, "Failed"))
+                }
+            }
+            _uiState.update {
+                it.copy(
+                    isUploading = false,
+                    successMessage = if (uploaded > 0) "Auto backup: $uploaded photo(s)/video(s) uploaded" else null,
+                    error = if (uploaded == 0 && uris.isNotEmpty()) "Auto backup failed" else null
+                )
+            }
+            loadFiles()
+            loadRecent()
+            loadStorageUsage()
+        }
+    }
+
+    private fun queryGalleryMedia(
+        contentResolver: ContentResolver,
+        alreadyBackedUp: Set<String>,
+        limit: Int
+    ): List<Pair<Uri, String>> {
+        val result = mutableListOf<Pair<Uri, String>>()
+        val collections = listOf(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI to "image",
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI to "video"
+        )
+        collections.forEach { (collection, _) ->
+            if (result.size >= limit) return result
+            val projection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME)
+            try {
+                contentResolver.query(collection, projection, null, null, "${MediaStore.MediaColumns.DATE_ADDED} DESC")?.use { cursor ->
+                    val idCol = cursor.getColumnIndex(MediaStore.MediaColumns._ID)
+                    val nameCol = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                    while (cursor.moveToNext() && result.size < limit) {
+                        val id = cursor.getLong(idCol)
+                        val uri = ContentUris.withAppendedId(collection, id)
+                        if (uri.toString() in alreadyBackedUp) continue
+                        val name = cursor.getString(nameCol) ?: "backup_$id"
+                        result.add(uri to name)
+                    }
+                }
+            } catch (e: Exception) {
+                // collection may be empty or inaccessible; skip
+            }
+        }
+        return result
+    }
+
+    fun download(file: CloudFile, targetDir: File, onSuccess: ((File) -> Unit)? = null) {
         viewModelScope.launch {
             upsertTransfer(TransferItem(file.filename, "Download", 0f, "Running"))
             val result = fileRepository.download(file, targetDir) { progress ->
                 upsertTransfer(TransferItem(file.filename, "Download", progress, "Running"))
             }
             if (result.isSuccess) {
+                val saved = result.getOrNull() ?: File(targetDir, file.filename)
                 upsertTransfer(TransferItem(file.filename, "Download", 1f, "Complete"))
                 _uiState.update { it.copy(successMessage = "Downloaded ${file.filename}") }
+                onSuccess?.invoke(saved)
             } else {
                 upsertTransfer(TransferItem(file.filename, "Download", 0f, "Failed"))
                 _uiState.update { it.copy(error = result.exceptionOrNull()?.message) }
@@ -313,10 +346,50 @@ class HomeViewModel : ViewModel() {
         }
     }
 
+    fun preparePreview(file: CloudFile, cacheDir: File, onReady: (File) -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            val existing = File(cacheDir, file.filename)
+            if (existing.exists() && existing.length() > 0 && (file.size_bytes <= 0 || existing.length() == file.size_bytes)) {
+                onReady(existing)
+                return@launch
+            }
+            val result = fileRepository.download(file, cacheDir) { }
+            if (result.isSuccess) {
+                val saved = File(cacheDir, file.filename)
+                if (saved.length() > 0) {
+                    onReady(saved)
+                } else {
+                    saved.delete()
+                    onError("File is empty on server")
+                }
+            } else {
+                onError(result.exceptionOrNull()?.message ?: "Failed to load file")
+            }
+        }
+    }
+
     fun rename(file: CloudFile, filename: String) {
         viewModelScope.launch {
             val result = fileRepository.rename(file.id, filename)
             if (result.isSuccess) loadFiles() else _uiState.update { it.copy(error = result.exceptionOrNull()?.message) }
+        }
+    }
+
+    fun fetchFile(fileId: Int, onResult: (CloudFile?) -> Unit) {
+        viewModelScope.launch {
+            val local = fileById(fileId)
+            if (local != null) {
+                onResult(local)
+                return@launch
+            }
+            val result = fileRepository.getFile(fileId)
+            val fetched = result.getOrNull()
+            if (fetched != null) {
+                _uiState.update {
+                    it.copy(files = listOf(fetched) + it.files.filterNot { f -> f.id == fetched.id })
+                }
+            }
+            onResult(fetched)
         }
     }
 
@@ -345,6 +418,26 @@ class HomeViewModel : ViewModel() {
         }
     }
 
+    fun moveMultipleToTrash(files: List<CloudFile>) {
+        if (files.isEmpty()) return
+        viewModelScope.launch {
+            var failed = 0
+            files.forEach { file ->
+                val result = fileRepository.moveToTrash(file.id)
+                if (result.isFailure) failed += 1
+            }
+            if (failed == 0) {
+                _uiState.update { it.copy(successMessage = "${files.size} file(s) moved to trash") }
+            } else {
+                _uiState.update { it.copy(error = "$failed file(s) could not be moved to trash") }
+            }
+            loadFiles()
+            loadRecent()
+            loadTrash()
+            loadStorageUsage()
+        }
+    }
+
     fun restore(file: CloudFile) {
         viewModelScope.launch {
             val result = fileRepository.restore(file.id)
@@ -363,69 +456,9 @@ class HomeViewModel : ViewModel() {
             if (result.isSuccess) {
                 loadTrash()
                 loadStorageUsage()
-            } else {
-                _uiState.update { it.copy(error = result.exceptionOrNull()?.message) }
-            }
-        }
-    }
-
-    fun shareWithEmail(fileId: Int, email: String, onDone: () -> Unit) {
-        viewModelScope.launch {
-            val result = fileRepository.shareWithEmail(fileId, email)
-            if (result.isSuccess) {
-                loadShared()
-                _uiState.update { it.copy(successMessage = "Shared with $email") }
-                onDone()
-            } else {
-                _uiState.update { it.copy(error = result.exceptionOrNull()?.message) }
-            }
-        }
-    }
-
-    fun createShareLink(fileId: Int) {
-        viewModelScope.launch {
-            val result = fileRepository.createShareLink(fileId)
-            if (result.isSuccess) {
-                _uiState.update { it.copy(shareLink = result.getOrNull()?.share_url, successMessage = "Link created") }
-            } else {
-                _uiState.update { it.copy(error = result.exceptionOrNull()?.message) }
-            }
-        }
-    }
-
-    fun clearShareLink() {
-        _uiState.update { it.copy(shareLink = null) }
-    }
-
-    fun updateProfile(name: String, email: String, password: String, onDone: () -> Unit) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(profileSaving = true, error = null) }
-            val result = authRepository.updateProfile(name, email, password.ifBlank { null })
-            if (result.isSuccess) {
-                val user = result.getOrNull()!!
-                TokenManager.saveUserInfo(user.email, user.display_name, user.role)
-                _uiState.update {
-                    it.copy(
-                        profileSaving = false,
-                        userName = user.display_name,
-                        userEmail = user.email,
-                        successMessage = "Profile updated"
-                    )
-                }
-                onDone()
-            } else {
-                _uiState.update { it.copy(profileSaving = false, error = result.exceptionOrNull()?.message) }
-            }
-        }
-    }
-
-    fun uploadAvatar(contentResolver: ContentResolver, uri: Uri, slot: Int) {
-        viewModelScope.launch {
-            val result = authRepository.uploadAvatar(contentResolver, uri, slot)
-            if (result.isSuccess) {
-                val user = result.getOrNull()!!
-                TokenManager.saveAvatarFlags(user.has_avatar_1, user.has_avatar_2)
-                _uiState.update { it.copy(hasAvatar1 = user.has_avatar_1, hasAvatar2 = user.has_avatar_2) }
+                loadFiles()
+                loadRecent()
+                _uiState.update { it.copy(successMessage = "Permanently deleted") }
             } else {
                 _uiState.update { it.copy(error = result.exceptionOrNull()?.message) }
             }

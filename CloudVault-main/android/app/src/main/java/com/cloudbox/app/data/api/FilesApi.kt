@@ -6,9 +6,7 @@ import com.cloudbox.app.data.api.models.FileListResponse
 import com.cloudbox.app.data.api.models.MessageResponse
 import com.cloudbox.app.data.api.models.MoveRequest
 import com.cloudbox.app.data.api.models.RenameRequest
-import com.cloudbox.app.data.api.models.ShareEmailRequest
-import com.cloudbox.app.data.api.models.ShareListResponse
-import com.cloudbox.app.data.api.models.ShareOut
+
 import okhttp3.MultipartBody
 import okhttp3.ResponseBody
 import retrofit2.Response
@@ -56,6 +54,9 @@ interface FilesApi {
         @Query("parent_folder_id") parentFolderId: Int? = null
     ): Response<CloudFile>
 
+    @GET("/files/{file_id}")
+    suspend fun getFile(@Path("file_id") fileId: Int): Response<CloudFile>
+
     @Streaming
     @GET("/files/{file_id}/download")
     suspend fun download(@Path("file_id") fileId: Int): Response<ResponseBody>
@@ -74,13 +75,4 @@ interface FilesApi {
 
     @DELETE("/files/{file_id}")
     suspend fun permanentlyDelete(@Path("file_id") fileId: Int): Response<MessageResponse>
-
-    @POST("/files/{file_id}/share")
-    suspend fun shareWithEmail(@Path("file_id") fileId: Int, @Body request: ShareEmailRequest): Response<ShareOut>
-
-    @POST("/files/{file_id}/share-link")
-    suspend fun createShareLink(@Path("file_id") fileId: Int): Response<ShareOut>
-
-    @GET("/files/shared")
-    suspend fun sharedWithMe(): Response<ShareListResponse>
 }
